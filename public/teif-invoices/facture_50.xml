@@ -1,0 +1,109 @@
+<?xml version="1.0" ?>
+<TEIFInvoice xmlns="http://www.tradenet.com.tn/teif/invoice/1.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.tradenet.com.tn/teif/invoice/1.0 teif_invoice_schema.xsd">
+    <InvoiceHeader version="1.0">
+        <MessageId>TTN-50-20250730225153</MessageId>
+    </InvoiceHeader>
+    <Bgm>
+        <DocumentTypeCode>380</DocumentTypeCode>
+        <DocumentNumber>50</DocumentNumber>
+    </Bgm>
+    <Dtm>
+        <DateTimeQualifier>137</DateTimeQualifier>
+        <DateTime>2015-28-02</DateTime>
+    </Dtm>
+    <PartnerSection role="supplier">
+        <Nad>
+            <PartyQualifier>SU</PartyQualifier>
+            <PartyId>0513287HPM000</PartyId>
+            <PartyName>SMTP princ</PartyName>
+            <PartyAddress/>
+        </Nad>
+    </PartnerSection>
+    <PartnerSection role="buyer">
+        <Nad>
+            <PartyQualifier>BY</PartyQualifier>
+            <PartyId>0513287HPM000</PartyId>
+            <PartyName/>
+            <PartyAddress/>
+        </Nad>
+    </PartnerSection>
+    <LinSection lineNumber="1">
+        <LinImd>
+            <ItemDescriptionType>F</ItemDescriptionType>
+            <ItemDescription>Article/Service (extrait automatiquement)</ItemDescription>
+        </LinImd>
+        <LinQty>
+            <QuantityQualifier>47</QuantityQualifier>
+            <Quantity>1</Quantity>
+            <MeasureUnitQualifier>PCE</MeasureUnitQualifier>
+        </LinQty>
+        <LinDtm>
+            <DateTimeQualifier>137</DateTimeQualifier>
+            <DateTime>2015-28-02</DateTime>
+        </LinDtm>
+        <LinTax>
+            <DutyTaxFeeTypeCode>VAT</DutyTaxFeeTypeCode>
+            <DutyTaxFeeRate>0.00</DutyTaxFeeRate>
+            <TaxPaymentDate>
+                <DateTimeQualifier>140</DateTimeQualifier>
+                <DateTime>2015-28-02</DateTime>
+            </TaxPaymentDate>
+        </LinTax>
+        <LinMoa>
+            <MonetaryAmountTypeQualifier>203</MonetaryAmountTypeQualifier>
+            <MonetaryAmount>135.50</MonetaryAmount>
+            <CurrencyCode>EUR</CurrencyCode>
+            <Rff>
+                <ReferenceQualifier>LI</ReferenceQualifier>
+                <ReferenceNumber>LINE-1</ReferenceNumber>
+            </Rff>
+        </LinMoa>
+    </LinSection>
+    <InvoiceMoa>
+        <Moa>
+            <MonetaryAmountTypeQualifier>86</MonetaryAmountTypeQualifier>
+            <MonetaryAmount>135.50</MonetaryAmount>
+            <CurrencyCode>EUR</CurrencyCode>
+        </Moa>
+    </InvoiceMoa>
+    <InvoiceTax>
+        <Tax>
+            <DutyTaxFeeTypeCode>TVA</DutyTaxFeeTypeCode>
+            <DutyTaxFeeRate>0.00</DutyTaxFeeRate>
+            <Moa>
+                <MonetaryAmountTypeQualifier>124</MonetaryAmountTypeQualifier>
+                <MonetaryAmount>0.26</MonetaryAmount>
+                <CurrencyCode>EUR</CurrencyCode>
+            </Moa>
+        </Tax>
+        <Tax>
+            <DutyTaxFeeTypeCode>Taxe_2</DutyTaxFeeTypeCode>
+            <DutyTaxFeeRate>0.00</DutyTaxFeeRate>
+            <Moa>
+                <MonetaryAmountTypeQualifier>124</MonetaryAmountTypeQualifier>
+                <MonetaryAmount>0.50</MonetaryAmount>
+                <CurrencyCode>EUR</CurrencyCode>
+            </Moa>
+        </Tax>
+    </InvoiceTax>
+    <RefTtnVal>
+        <Reference>
+            <ReferenceQualifier>AAK</ReferenceQualifier>
+            <ReferenceNumber/>
+            <ReferenceDate>
+                <DateTimeQualifier>171</DateTimeQualifier>
+                <DateTime>2025-07-30</DateTime>
+            </ReferenceDate>
+        </Reference>
+    </RefTtnVal>
+    <Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
+        <ds:SignedInfo>
+            <ds:CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>
+            <ds:SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"/>
+        </ds:SignedInfo>
+        <ds:SignatureValue>PLACEHOLDER_SIGNATURE_ELECTRONIQUE_XADES_BASE64</ds:SignatureValue>
+        <ds:KeyInfo>
+            <ds:X509Data>PLACEHOLDER_CERTIFICAT_X509_BASE64</ds:X509Data>
+        </ds:KeyInfo>
+    </Signature>
+</TEIFInvoice>

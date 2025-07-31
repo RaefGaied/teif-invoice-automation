@@ -1,0 +1,58 @@
+{
+  "invoice_number": "50",
+  "invoice_date": "2015-28-02",
+  "currency": "TND",
+  "sender": {
+    "name": "TUNISIE TRADENET",
+    "tax_id": "1049000T",
+    "address": "Rue du Lac Malaren, Immeuble El Khalij Les Berges du Lac, 1053 Tunis, Tunisie"
+  },
+  "receiver": {
+    "name": "Centre Informatique Complexe Hached",
+    "tax_id": "0513287HPM000",
+    "address": "",
+    "client_code": "41100013"
+  },
+  "payment_terms": "À régler exclusivement au niveau des bureaux postaux sur présentation de la facture",
+  "payment_due_date": "",
+  "items": [
+    {
+      "description": "SMTP principal",
+      "quantity": 1.0,
+      "unit_price": 50.0,
+      "line_total": 50.0,
+      "tax_rate": 0.0
+    },
+    {
+      "description": "Dossier TCEAP",
+      "quantity": 2.0,
+      "unit_price": 4.5,
+      "line_total": 9.0,
+      "tax_rate": 0.0
+    },
+    {
+      "description": "Dossier FDE",
+      "quantity": 17.0,
+      "unit_price": 4.5,
+      "line_total": 76.5,
+      "tax_rate": 0.0
+    }
+  ],
+  "subtotal_ht": 135.5,
+  "invoice_taxes": [
+    {
+      "tax_type": "TVA",
+      "rate": 18.0,
+      "amount": 0.0
+    },
+    {
+      "tax_type": "Droit_Timbre",
+      "rate": 0.0,
+      "amount": 0.5
+    }
+  ],
+  "total_taxes": 0.5,
+  "total_amount": 136.0,
+  "ttn_validation_ref": "88812500089016077795",
+  "invoice_allowances": []
+}

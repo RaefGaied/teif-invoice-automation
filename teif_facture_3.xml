@@ -1,0 +1,193 @@
+<?xml version="1.0" ?>
+<TEIF controlingAgency="TTN" version="1.8.8">
+    <InvoiceHeader>
+        <MessageSenderIdentifier type="I-01">0000000XXX000</MessageSenderIdentifier>
+        <MessageRecieverIdentifier type="I-01">0000000YYY000</MessageRecieverIdentifier>
+    </InvoiceHeader>
+    <InvoiceBody>
+        <Bgm>
+            <DocumentIdentifier>UNKNOWN</DocumentIdentifier>
+            <DocumentType code="I-11">Facture</DocumentType>
+        </Bgm>
+        <Dtm>
+            <DateText format="ddMMyy" functionCode="I-31">310725</DateText>
+        </Dtm>
+        <PartnerSection>
+            <PartnerDetails functionCode="I-62">
+                <Nad>
+                    <PartnerIdentifier type="I-01">0000000XXX000</PartnerIdentifier>
+                    <PartnerName nameType="Qualification">ENTREPRISE EMETTRICE</PartnerName>
+                    <PartnerAdresses lang="fr">
+                        <AdressDescription>Lotissement El Khalij Les Berges du Lac</AdressDescription>
+                        <Street>Rue du Lac Malaren</Street>
+                        <CityName>TUNIS</CityName>
+                        <PostalCode>1053</PostalCode>
+                        <Country codeList="ISO_3166-1">TN</Country>
+                    </PartnerAdresses>
+                </Nad>
+                <RffSection>
+                    <Reference refID="I-815">B154702000</Reference>
+                </RffSection>
+                <RffSection>
+                    <Reference refID="I-816">SA</Reference>
+                </RffSection>
+                <CtaSection>
+                    <Contact functionCode="I-94">
+                        <ContactIdentifier>TTN</ContactIdentifier>
+                        <ContactName>Tunisie TradeNet</ContactName>
+                    </Contact>
+                    <Communication>
+                        <ComMeansType>I-101</ComMeansType>
+                        <ComAdress>71 861 712</ComAdress>
+                    </Communication>
+                </CtaSection>
+            </PartnerDetails>
+            <PartnerDetails functionCode="I-64">
+                <Nad>
+                    <PartnerIdentifier type="I-01">0000000YYY000</PartnerIdentifier>
+                    <PartnerName nameType="Qualification">CLIENT INCONNU</PartnerName>
+                    <PartnerAdresses lang="fr">
+                        <AdressDescription/>
+                        <Street>Adresse inconnue</Street>
+                        <CityName>TUNIS</CityName>
+                        <PostalCode>1000</PostalCode>
+                        <Country codeList="ISO_3166-1">TN</Country>
+                    </PartnerAdresses>
+                </Nad>
+            </PartnerDetails>
+        </PartnerSection>
+        <PytSection>
+            <PytSectionDetails>
+                <Pyt>
+                    <PaymentTearmsTypeCode>I-114</PaymentTearmsTypeCode>
+                    <PaymentTearmsDescription>Les banques sont priees de payer au RIB suivant: 0410 5044 4047 0138 1036.</PaymentTearmsDescription>
+                </Pyt>
+            </PytSectionDetails>
+            <PytSectionDetails>
+                <Pyt>
+                    <PaymentTearmsTypeCode>I-115</PaymentTearmsTypeCode>
+                    <PaymentTearmsDescription>A Regler exclusivement au niveau des bureaux postaux sur presentation de la facture.</PaymentTearmsDescription>
+                </Pyt>
+                <PytFii functionCode="I-141">
+                    <AccountHolder>
+                        <AccountNumber>0120021241115530</AccountNumber>
+                        <OwnerIdentifier>1B</OwnerIdentifier>
+                    </AccountHolder>
+                    <InstitutionIdentification nameCode="0760">
+                        <BranchIdentifier>0760</BranchIdentifier>
+                        <InstitutionName>La poste</InstitutionName>
+                    </InstitutionIdentification>
+                </PytFii>
+            </PytSectionDetails>
+        </PytSection>
+        <LinSection>
+            <Lin>
+                <ItemIdentifier>1</ItemIdentifier>
+                <LinImd lang="fr">
+                    <ItemCode>ART001</ItemCode>
+                    <ItemDescription>Article/Service (extrait automatiquement)</ItemDescription>
+                </LinImd>
+                <LinQty>
+                    <Quantity measurementUnit="UNIT">1.0</Quantity>
+                </LinQty>
+                <LinMoa>
+                    <MoaDetails>
+                        <Moa amountTypeCode="I-183" currencyCodeList="ISO_4217">
+                            <Amount currencyIdentifier="TND">0.000</Amount>
+                        </Moa>
+                    </MoaDetails>
+                    <MoaDetails>
+                        <Moa amountTypeCode="I-171" currencyCodeList="ISO_4217">
+                            <Amount currencyIdentifier="TND">0.000</Amount>
+                        </Moa>
+                    </MoaDetails>
+                </LinMoa>
+            </Lin>
+        </LinSection>
+        <InvoiceMoa>
+            <AmountDetails>
+                <Moa amountTypeCode="I-179" currencyCodeList="ISO_4217">
+                    <Amount currencyIdentifier="TND">0.000</Amount>
+                </Moa>
+            </AmountDetails>
+            <AmountDetails>
+                <Moa amountTypeCode="I-180" currencyCodeList="ISO_4217">
+                    <Amount currencyIdentifier="TND">0.000</Amount>
+                </Moa>
+            </AmountDetails>
+            <AmountDetails>
+                <Moa amountTypeCode="I-176" currencyCodeList="ISO_4217">
+                    <Amount currencyIdentifier="TND">0.000</Amount>
+                </Moa>
+            </AmountDetails>
+        </InvoiceMoa>
+        <InvoiceTax/>
+    </InvoiceBody>
+    <RefTtnVal>
+        <ReferenceTTN refID="I-88"/>
+        <ReferenceDate>
+            <DateText format="ddMMyyHHmm" functionCode="I-37">3107251256</DateText>
+        </ReferenceDate>
+    </RefTtnVal>
+    <ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#" Id="SigFrs">
+        <ds:SignedInfo>
+            <ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
+            <ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/>
+            <ds:Reference Id="r-id-frs" Type="" URI="">
+                <ds:Transforms>
+                    <ds:Transform Algorithm="http://www.w3.org/TR/1999/REC-xpath-19991116">
+                        <ds:XPath>not(ancestor-or-self::ds:Signature)</ds:XPath>
+                    </ds:Transform>
+                    <ds:Transform Algorithm="http://www.w3.org/TR/1999/REC-xpath-19991116">
+                        <ds:XPath>not(ancestor-or-self::RefTtnVal)</ds:XPath>
+                    </ds:Transform>
+                    <ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
+                </ds:Transforms>
+                <ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/>
+                <ds:DigestValue>bCtqJZah+oGHv2z1bsUbJk2Q4/P+v0gFEvhr5I/is1E=</ds:DigestValue>
+            </ds:Reference>
+        </ds:SignedInfo>
+        <ds:SignatureValue Id="value-SigFrs">DpyejsAd/4OP7uqlBvJKtBdOtWp0nuMAPf9TMi0TWBLLKM2SR61VTb49kdy37XTBVGaJTE7NaJ8J9OKbIXUH/Qm78jn7mjkvNqHliLBZ/WW1n1FU96v0IN+5mv6Pw18SvZGjLKgbwH4PMGZYSLfjtlZ8oJxHLLsVooBO0GzkjO3w05ykfeVvDJz89Fm+FbJh84pbNXp67WcBg4zu6HbCFidDXi653yaMrRDnhA3r4IxSi4bG8CkuzdDy6XUpK3/a0o69K07hg6S54NWao7Aw0TVQIc0B6BpnxytkA7cZ7AiPeHl9Xz8a5Lm5ytzxulYuFkz2pwAW6oWGzs6VzsJPoA==</ds:SignatureValue>
+        <ds:KeyInfo>
+            <ds:X509Data>
+                <ds:X509Certificate>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</ds:X509Certificate>
+            </ds:X509Data>
+        </ds:KeyInfo>
+        <ds:Object>
+            <xades:QualifyingProperties xmlns:xades="http://uri.etsi.org/01903/v1.3.2#" Target="#SigFrs">
+                <xades:SignedProperties Id="xades-SigFrs">
+                    <xades:SignedSignatureProperties>
+                        <xades:SigningTime>2025-07-31T11:56:18Z</xades:SigningTime>
+                        <xades:SigningCertificateV2>
+                            <xades:Cert>
+                                <xades:CertDigest>
+                                    <ds:DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha1"/>
+                                    <ds:DigestValue>lNeILSzjoMfAGZWD/MvRYcvQ2tw=</ds:DigestValue>
+                                </xades:CertDigest>
+                                <xades:IssuerSerialV2>MIGAMHSkcjBwMQswCQYDVQQGEwJUTjEOMAwGA1UEBwwFVHVuaXMxLjAsBgNVBAoMJU5hdGlvbmFsIERpZ2l0YWwgQ2VydGlmaWNhdGlvbiBBZ2VuY3kxITAfBgNVBAMMGFRuVHJ1c3QgUXVhbGlmaWVkIEdvdiBDQQIIBW0G+ewtTEA=</xades:IssuerSerialV2>
+                            </xades:Cert>
+                        </xades:SigningCertificateV2>
+                        <xades:SignaturePolicyIdentifier>
+                            <xades:SignaturePolicyId>
+                                <xades:SigPolicyId>
+                                    <xades:Identifier Qualifier="OIDasURN">urn:2.16.788.1.2.1</xades:Identifier>
+                                    <xades:Description>Politique de signature de la facture electronique</xades:Description>
+                                </xades:SigPolicyId>
+                            </xades:SignaturePolicyId>
+                        </xades:SignaturePolicyIdentifier>
+                        <xades:SignerRoleV2>
+                            <xades:ClaimedRoles>
+                                <xades:ClaimedRole>CEO</xades:ClaimedRole>
+                            </xades:ClaimedRoles>
+                        </xades:SignerRoleV2>
+                    </xades:SignedSignatureProperties>
+                    <xades:SignedDataObjectProperties>
+                        <xades:DataObjectFormat ObjectReference="#r-id-frs">
+                            <xades:MimeType>application/octet-stream</xades:MimeType>
+                        </xades:DataObjectFormat>
+                    </xades:SignedDataObjectProperties>
+                </xades:SignedProperties>
+            </xades:QualifyingProperties>
+        </ds:Object>
+    </ds:Signature>
+</TEIF>

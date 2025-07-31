@@ -1,0 +1,178 @@
+<?xml version="1.0" ?>
+<TEIFInvoice xmlns="http://www.tradenet.com.tn/teif/invoice/1.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.tradenet.com.tn/teif/invoice/1.0 teif_invoice_schema.xsd">
+  <InvoiceHeader version="1.0">
+    <MessageId>TTN-50-20250730134505</MessageId>
+  </InvoiceHeader>
+  <Bgm>
+    <DocumentTypeCode>380</DocumentTypeCode>
+    <DocumentNumber>50</DocumentNumber>
+  </Bgm>
+  <Dtm>
+    <DateTimeQualifier>137</DateTimeQualifier>
+    <DateTime>2015-28-02</DateTime>
+  </Dtm>
+  <PartnerSection role="supplier">
+    <Nad>
+      <PartyQualifier>SU</PartyQualifier>
+      <PartyId>1049000T</PartyId>
+      <PartyName>TUNISIE TRADENET</PartyName>
+      <PartyAddress>Rue du Lac Malaren, Immeuble El Khalij Les Berges du Lac, 1053 Tunis, Tunisie</PartyAddress>
+    </Nad>
+  </PartnerSection>
+  <PartnerSection role="buyer">
+    <Nad>
+      <PartyQualifier>BY</PartyQualifier>
+      <PartyId>0513287HPM000</PartyId>
+      <PartyName>Centre Informatique Complexe Hached</PartyName>
+      <PartyAddress/>
+    </Nad>
+  </PartnerSection>
+  <PytSection>
+    <Pyt>
+      <PaymentTermsTypeCode>1</PaymentTermsTypeCode>
+      <PaymentTermsDescription>À régler exclusivement au niveau des bureaux postaux sur présentation de la facture</PaymentTermsDescription>
+    </Pyt>
+  </PytSection>
+  <LinSection lineNumber="1">
+    <LinImd>
+      <ItemDescriptionType>F</ItemDescriptionType>
+      <ItemDescription>SMTP principal</ItemDescription>
+    </LinImd>
+    <LinQty>
+      <QuantityQualifier>47</QuantityQualifier>
+      <Quantity>1.0</Quantity>
+      <MeasureUnitQualifier>PCE</MeasureUnitQualifier>
+    </LinQty>
+    <LinDtm>
+      <DateTimeQualifier>137</DateTimeQualifier>
+      <DateTime>2015-28-02</DateTime>
+    </LinDtm>
+    <LinTax>
+      <DutyTaxFeeTypeCode>VAT</DutyTaxFeeTypeCode>
+      <DutyTaxFeeRate>0.00</DutyTaxFeeRate>
+      <TaxPaymentDate>
+        <DateTimeQualifier>140</DateTimeQualifier>
+        <DateTime>2015-28-02</DateTime>
+      </TaxPaymentDate>
+    </LinTax>
+    <LinMoa>
+      <MonetaryAmountTypeQualifier>203</MonetaryAmountTypeQualifier>
+      <MonetaryAmount>50.000</MonetaryAmount>
+      <CurrencyCode>TND</CurrencyCode>
+      <Rff>
+        <ReferenceQualifier>LI</ReferenceQualifier>
+        <ReferenceNumber>LINE-1</ReferenceNumber>
+      </Rff>
+    </LinMoa>
+  </LinSection>
+  <LinSection lineNumber="2">
+    <LinImd>
+      <ItemDescriptionType>F</ItemDescriptionType>
+      <ItemDescription>Dossier TCEAP</ItemDescription>
+    </LinImd>
+    <LinQty>
+      <QuantityQualifier>47</QuantityQualifier>
+      <Quantity>2.0</Quantity>
+      <MeasureUnitQualifier>PCE</MeasureUnitQualifier>
+    </LinQty>
+    <LinDtm>
+      <DateTimeQualifier>137</DateTimeQualifier>
+      <DateTime>2015-28-02</DateTime>
+    </LinDtm>
+    <LinTax>
+      <DutyTaxFeeTypeCode>VAT</DutyTaxFeeTypeCode>
+      <DutyTaxFeeRate>0.00</DutyTaxFeeRate>
+      <TaxPaymentDate>
+        <DateTimeQualifier>140</DateTimeQualifier>
+        <DateTime>2015-28-02</DateTime>
+      </TaxPaymentDate>
+    </LinTax>
+    <LinMoa>
+      <MonetaryAmountTypeQualifier>203</MonetaryAmountTypeQualifier>
+      <MonetaryAmount>9.000</MonetaryAmount>
+      <CurrencyCode>TND</CurrencyCode>
+      <Rff>
+        <ReferenceQualifier>LI</ReferenceQualifier>
+        <ReferenceNumber>LINE-2</ReferenceNumber>
+      </Rff>
+    </LinMoa>
+  </LinSection>
+  <LinSection lineNumber="3">
+    <LinImd>
+      <ItemDescriptionType>F</ItemDescriptionType>
+      <ItemDescription>Dossier FDE</ItemDescription>
+    </LinImd>
+    <LinQty>
+      <QuantityQualifier>47</QuantityQualifier>
+      <Quantity>17.0</Quantity>
+      <MeasureUnitQualifier>PCE</MeasureUnitQualifier>
+    </LinQty>
+    <LinDtm>
+      <DateTimeQualifier>137</DateTimeQualifier>
+      <DateTime>2015-28-02</DateTime>
+    </LinDtm>
+    <LinTax>
+      <DutyTaxFeeTypeCode>VAT</DutyTaxFeeTypeCode>
+      <DutyTaxFeeRate>0.00</DutyTaxFeeRate>
+      <TaxPaymentDate>
+        <DateTimeQualifier>140</DateTimeQualifier>
+        <DateTime>2015-28-02</DateTime>
+      </TaxPaymentDate>
+    </LinTax>
+    <LinMoa>
+      <MonetaryAmountTypeQualifier>203</MonetaryAmountTypeQualifier>
+      <MonetaryAmount>76.500</MonetaryAmount>
+      <CurrencyCode>TND</CurrencyCode>
+      <Rff>
+        <ReferenceQualifier>LI</ReferenceQualifier>
+        <ReferenceNumber>LINE-3</ReferenceNumber>
+      </Rff>
+    </LinMoa>
+  </LinSection>
+  <InvoiceMoa>
+    <Moa>
+      <MonetaryAmountTypeQualifier>86</MonetaryAmountTypeQualifier>
+      <MonetaryAmount>136.000</MonetaryAmount>
+      <CurrencyCode>TND</CurrencyCode>
+    </Moa>
+  </InvoiceMoa>
+  <InvoiceTax>
+    <Tax>
+      <DutyTaxFeeTypeCode>TVA</DutyTaxFeeTypeCode>
+      <DutyTaxFeeRate>18.00</DutyTaxFeeRate>
+      <Moa>
+        <MonetaryAmountTypeQualifier>124</MonetaryAmountTypeQualifier>
+        <MonetaryAmount>0.000</MonetaryAmount>
+        <CurrencyCode>TND</CurrencyCode>
+      </Moa>
+    </Tax>
+    <Tax>
+      <DutyTaxFeeTypeCode>Droit_Timbre</DutyTaxFeeTypeCode>
+      <Moa>
+        <MonetaryAmountTypeQualifier>124</MonetaryAmountTypeQualifier>
+        <MonetaryAmount>0.500</MonetaryAmount>
+        <CurrencyCode>TND</CurrencyCode>
+      </Moa>
+    </Tax>
+  </InvoiceTax>
+  <RefTtnVal>
+    <Reference>
+      <ReferenceQualifier>AAK</ReferenceQualifier>
+      <ReferenceNumber>88812500089016077795</ReferenceNumber>
+      <ReferenceDate>
+        <DateTimeQualifier>171</DateTimeQualifier>
+        <DateTime>2025-07-30</DateTime>
+      </ReferenceDate>
+    </Reference>
+  </RefTtnVal>
+  <Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
+    <ds:SignedInfo>
+      <ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
+      <ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/>
+    </ds:SignedInfo>
+    <ds:SignatureValue>PLACEHOLDER_SIGNATURE_ELECTRONIQUE_XADES_BASE64</ds:SignatureValue>
+    <ds:KeyInfo>
+      <ds:X509Data>PLACEHOLDER_CERTIFICAT_X509_BASE64</ds:X509Data>
+    </ds:KeyInfo>
+  </Signature>
+</TEIFInvoice>
