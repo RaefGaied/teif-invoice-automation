@@ -20,8 +20,7 @@ class SpecificInvoiceExtractor(BaseExtractor):
             amount_thousands_separator=",",
             normalize_text=True
         ))
-        
-        # Patterns spécifiques à ce format de facture
+       
         self.patterns = {
             'invoice_number': [
                 r'Facture[:\s]+([A-Z0-9-]+)',
@@ -38,11 +37,11 @@ class SpecificInvoiceExtractor(BaseExtractor):
             ]
         }
         
-        # Sections pour l'extraction structurée
+       
         self.sections = {
-            'header': (0, 0.2),    # Premier 20% de la page
-            'items': (0.2, 0.7),   # 50% du milieu
-            'totals': (0.7, 1.0)   # 30% du bas
+            'header': (0, 0.2),    
+            'items': (0.2, 0.7),   
+            'totals': (0.7, 1.0)   
         }
     
     def extract(self, source: Any) -> Dict[str, Any]:

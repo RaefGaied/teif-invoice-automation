@@ -146,7 +146,7 @@ def create_output_directory(base_dir: str, subdir: str = None) -> str:
     return full_path
 
 
-def get_file_info(file_path: str) -> Dict:
+def get_file_info(file_path: str) -> dict:
     """
     Récupère les informations sur un fichier.
     
@@ -171,7 +171,7 @@ def get_file_info(file_path: str) -> Dict:
     }
 
 
-def log_extraction_summary(invoice_data: Dict) -> str:
+def log_extraction_summary(invoice_data: dict) -> str:
     """
     Crée un résumé des données extraites pour logging.
     
@@ -196,7 +196,7 @@ def log_extraction_summary(invoice_data: Dict) -> str:
     return "\n".join(summary_lines)
 
 
-def validate_teif_data(invoice_data: Dict) -> List[str]:
+def validate_teif_data(invoice_data: dict) -> List[str]:
     """
     Valide les données avant génération TEIF.
     
