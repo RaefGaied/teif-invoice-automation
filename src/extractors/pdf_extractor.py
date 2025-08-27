@@ -10,9 +10,9 @@ from typing import Dict, List, Optional, Tuple, Any, TypeVar, Union # Assurez-vo
 
 # Import base extractor components
 from .base_extractor import BaseExtractor, ExtractorConfig
-from .amount_validator import validate_and_fix_amounts # Import de la fonction de validation
+from .amount_validator import validate_and_fix_amounts 
 
-# PDF processing libraries (top-level imports are sufficient)
+
 try:
     import pdfplumber
 except ImportError:

@@ -1,0 +1,70 @@
+=== Données extraites ===
+Généré le: 2025-08-11 12:42:20
+==================================================
+
+invoice_number: 88812500089016077795819135
+
+invoice_date: 2015-02-28
+
+currency: TND
+
+total_amount: 152.26
+
+amount_ht: 146.0
+
+tva_amount: 6.26
+
+tva_rate: 7
+
+gross_amount: 0.0
+
+stamp_duty: 0.6
+
+--- SENDER ---
+identifier: 0513287HPM000
+name: uf
+tax_id: 0513287HPM000
+address_desc: 
+street: Rue du Lac Malaren
+city: Tlephone :
+postal_code: 1053
+country: TN
+references: []
+contacts: [
+  {
+    "identifier": "CTT",
+    "name": "uf",
+    "communication": {
+      "type": "I-104",
+      "value": "www.tradenet.com.tn"
+    }
+  }
+]
+
+--- RECEIVER ---
+identifier: 41100013
+name: ONPS
+tax_id: 0513287HPM000
+address_desc: 
+street: Adresse inconnue
+city: TUNIS
+postal_code: 1049
+country: TN
+references: []
+contacts: []
+
+payment_details: [{'type_code': 'I-114', 'description': '', 'bank_details': {'account_number': '', 'owner_id': '', 'bank_code': '', 'branch_code': '', 'bank_name': ''}}]
+
+items: [{'code': 'ART001', 'description': 'Article/Service (extrait automatiquement)', 'quantity': 1.0, 'amount_ht': 146.0, 'amount_ttc': 156.22, 'tax_rate': 7}]
+
+invoice_period_start: 
+
+invoice_period_end: 
+
+ttn_reference: 
+
+cev_reference: 
+
+invoice_taxes: [{'tax_type': 'TVA', 'amount': 0.26, 'rate': 0.0}, {'tax_type': 'Taxe_2', 'amount': 0.5, 'rate': 0.0}]
+
+total_taxes: 0.76

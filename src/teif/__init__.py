@@ -8,3 +8,4 @@ Module de génération XML conforme au standard TEIF (Tunisian Electronic Invoic
 from .generator import TEIFGenerator
 
 __all__ = ['TEIFGenerator']
+

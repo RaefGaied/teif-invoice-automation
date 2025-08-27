@@ -1,710 +1,1764 @@
-"""
-TEIF XML Generator - Official Structure Compliant
-================================================
-
-Génère des fichiers XML conformes au standard TEIF (Tunisian Electronic Invoice Format).
-Respecte la structure officielle TTN avec tous les éléments obligatoires (M) et conditionnels (C).
-"""
-
 import xml.etree.ElementTree as ET
+from typing import Dict, Any, List, Optional, Union
+from datetime import datetime, timedelta
+import logging
 from xml.dom import minidom
-from datetime import datetime
-from typing import Dict, List, Optional
 import re
 
-
-class TEIFGenerator:
-    """Générateur de XML TEIF conforme au standard TTN officiel."""
+# Import des modules de section
+from .sections import (
+    # En-tête et identification
+    create_header_element,
+    create_bgm_element,
+    create_dtm_element,
+    HeaderSection,
     
-    def __init__(self):
-        """Initialise le générateur TEIF."""
-        self.namespace = "http://www.tradenet.com.tn/teif/invoice/1.0"
-        self.xsi_namespace = "http://www.w3.org/2001/XMLSchema-instance"
-        self.schema_location = "http://www.tradenet.com.tn/teif/invoice/1.0 teif_invoice_schema.xsd"
-        self.ds_namespace = "http://www.w3.org/2000/09/xmldsig#"
-        self.version = "2.0"  # Latest version from documentation
+    # Partenaires
+    create_partner_section,
+    add_seller_party,
+    add_buyer_party,
+    PartnerSection,
+    
+    # Montants et taxes
+    create_amount_element,
+    create_tax_amount,
+    create_adjustment,
+    create_invoice_totals,
+    
+    # Paiements
+    add_payment_terms,
+    
+    # Références
+    create_reference,
+    add_ttn_reference,
+    add_document_reference,
+    
+    # Signature
+    create_signature,
+    add_signature,
+    SignatureError,
+    
+    # Lignes de facture
+    LinSection,
+    LinItem,
+    ItemDescription,
+    Quantity,
+    
+    # Taxes
+    add_tax_detail,
+    add_invoice_tax_section
+)
+class TEIFGenerator:
+    """Générateur de documents XML conformes à la norme TEIF 1.8.8."""
+    
+    def __init__(self, logging_level=logging.INFO):
+        """Initialise le générateur TEIF avec les paramètres par défaut."""
+       
+        self.ns = {
+            '': 'http://www.tn.gov/teif',
+            'ds': 'http://www.w3.org/2000/09/xmldsig#',
+            'xades': 'http://uri.etsi.org/01903/v1.3.2#',
+            'xsi': 'http://www.w3.org/2001/XMLSchema-instance'
+        }
         
-    def generate_xml(self, invoice_data: dict, signature_data: dict = None) -> str:
+        self.schema_location = "http://www.tn.gov/teif TEIF.xsd"
+        self.version = "1.8.8"
+        self.controlling_agency = "TTN"
+
+        # Set up logging
+        self.logger = logging.getLogger(__name__)
+        self.logger.setLevel(logging_level)
+        
+        # Create console handler and set level
+        ch = logging.StreamHandler()
+        ch.setLevel(logging_level)
+        
+        # Create formatter
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        ch.setFormatter(formatter)
+        
+        # Add handler to logger
+        if not self.logger.handlers:
+            self.logger.addHandler(ch)
+   
+
+    def generate_teif_xml(self, data: Dict[str, Any]) -> str:
         """
-        Génère le XML TEIF à partir des données de facture.
+        Generate TEIF XML from the provided data.
         
         Args:
-            invoice_data: Dictionnaire contenant les données de facture
-            signature_data: Données de signature électronique (optionnel)
+            data: Dictionary containing invoice data
             
         Returns:
-            String contenant le XML TEIF formaté
+            str: Generated XML as a string
         """
-        # Validation et nettoyage des données
-        invoice_data = self._validate_and_clean_data(invoice_data)
-        
-        # Création de l'élément racine
-        root = self._create_root_element()
-        
-        # Construction du XML selon l'ordre officiel TEIF
-        self._add_invoice_header(root, invoice_data)      # Rang 1 (M)
-        
-        # Create InvoiceBody wrapper (mandatory)
-        invoice_body = ET.SubElement(root, "InvoiceBody")
-        
-        self._add_bgm(invoice_body, invoice_data)                 # Rang 2 (M)
-        self._add_dtm(invoice_body, invoice_data)                 # Rang 3 (M)
-        self._add_partner_sections(invoice_body, invoice_data)    # Rang 4-5 (M)
-        self._add_location_sections(invoice_body, invoice_data)   # Rang 13 (C)
-        self._add_payment_section(invoice_body, invoice_data)     # Rang 15-16 (C)
-        self._add_ftx_sections(invoice_body, invoice_data)        # Rang 21 (C)
-        self._add_special_conditions(invoice_body, invoice_data)  # Rang 22-23 (C)
-        self._add_line_sections(invoice_body, invoice_data)       # Rang 24+ (M)
-        self._add_invoice_moa(invoice_body, invoice_data)         # Rang 41-42 (M)
-        self._add_invoice_tax(invoice_body, invoice_data)         # Rang 46-48 (M)
-        self._add_invoice_alc(invoice_body, invoice_data)         # Rang 49-52 (C)
-        
-        # Elements outside InvoiceBody
-        self._add_additional_documents(root, invoice_data)        # Rang 53-54 (C)
-        self._add_ref_ttn_val(root, invoice_data)                 # Rang 55-57 (M)
-        self._add_signature(root, signature_data)                 # Rang 58 (M)
-        
-        return self._format_xml(root)
-    
-    def _create_root_element(self) -> ET.Element:
-        """Crée l'élément racine avec les attributs officiels TEIF."""
-        root = ET.Element("TEIF")
-        root.set("xmlns", self.namespace)
-        root.set("xmlns:xsi", self.xsi_namespace)
-        root.set("xsi:schemaLocation", self.schema_location)
-        root.set("version", self.version)
-        root.set("controlingAgency", "TTN")
-        return root
-    
-    def _add_invoice_header(self, root: ET.Element, data: dict):
-        """Ajoute l'en-tête de facture (Rang 1 - M)."""
-        header = ET.SubElement(root, "InvoiceHeader")
-        
-        # MessageSenderIdentifier with type attribute
-        sender_id = ET.SubElement(header, "MessageSenderIdentifier", type="I-01")
-        sender_id.text = data.get('sender', {}).get('identifier', data.get('sender', {}).get('tax_id', ''))
-        
-        # MessageRecieverIdentifier with type attribute
-        receiver_id = ET.SubElement(header, "MessageRecieverIdentifier", type="I-01")
-        receiver_id.text = data.get('receiver', {}).get('identifier', data.get('receiver', {}).get('tax_id', ''))
-    
-    def _add_bgm(self, invoice_body: ET.Element, data: dict):
-        """Ajoute le début du message (Rang 2 - M)."""
-        bgm = ET.SubElement(invoice_body, "Bgm")
-        ET.SubElement(bgm, "DocumentTypeCode").text = "380"  # Commercial Invoice
-        
-        # Clean document number
-        doc_number = data.get('invoice_number', 'UNKNOWN')
-        doc_number = re.sub(r'[^a-zA-Z0-9\-_]', '', doc_number)[:35]
-        ET.SubElement(bgm, "DocumentNumber").text = doc_number
-    
-    def _add_dtm(self, invoice_body: ET.Element, data: dict):
-        """Ajoute la date/heure (Rang 3 - M)."""
-        dtm = ET.SubElement(invoice_body, "Dtm")
-        ET.SubElement(dtm, "DateTimeQualifier").text = "137"  # Document date
-        
-        # Format date as YYYY-MM-DD
-        invoice_date = data.get('invoice_date', datetime.now().strftime("%Y-%m-%d"))
         try:
-            # Validate date format
-            datetime.strptime(invoice_date, "%Y-%m-%d")
-        except ValueError:
-            invoice_date = datetime.now().strftime("%Y-%m-%d")
+            # Create the root element with proper namespaces
+            ns_map = {
+                None: "http://www.tn.gov/teif",
+                'xsi': 'http://www.w3.org/2001/XMLSchema-instance',
+                'schemaLocation': 'http://www.tn.gov/teif TEIF_1.8.8.xsd'
+            }
             
-        ET.SubElement(dtm, "DateTime").text = invoice_date
-    
-    def _add_partner_sections(self, invoice_body: ET.Element, data: dict):
-        """Ajoute les sections partenaires (Rang 4-5 - M)."""
-        sender = data.get('sender', {})
-        receiver = data.get('receiver', {})
-        
-        # Supplier section
-        supplier_section = ET.SubElement(invoice_body, "PartnerSection")
-        self._add_partner_details(supplier_section, sender, "SU")
-        
-        # Buyer section
-        buyer_section = ET.SubElement(invoice_body, "PartnerSection")
-        self._add_partner_details(buyer_section, receiver, "BY")
-    
-    def _add_partner_details(self, section: ET.Element, party: dict, qualifier: str):
-        """Ajoute les détails d'un partenaire avec tous les champs possibles."""
-        # Nad (Rang 5 - M)
-        nad = ET.SubElement(section, "Nad")
-        
-        # PartnerIdentifier with type attribute
-        partner_id = ET.SubElement(nad, "PartnerIdentifier", type="I-01")
-        partner_id.text = party.get('identifier', party.get('tax_id', 'UNKNOWN'))
-        
-        ET.SubElement(nad, "PartnerName").text = party.get('name', 'ENTREPRISE' if qualifier == 'SU' else 'CLIENT')
-        
-        # Partner addresses
-        addresses = ET.SubElement(nad, "PartnerAdresses", lang="fr")
-        ET.SubElement(addresses, "AdressDescription").text = party.get('address_desc', '')
-        ET.SubElement(addresses, "Street").text = party.get('street', party.get('address', ''))
-        ET.SubElement(addresses, "CityName").text = party.get('city', '')
-        ET.SubElement(addresses, "PostalCode").text = party.get('postal_code', '')
-        ET.SubElement(addresses, "Country", codeList="ISO_3166-1").text = party.get('country', 'TN')
-        
-        # Loc section if available (Rang 6 - C)
-        if party.get('location_details'):
-            self._add_loc_section(section, party['location_details'])
-        
-        # RffSection if references available (Rang 7-9 - C)
-        if party.get('references'):
-            self._add_rff_sections(section, party['references'])
-        
-        # CtaSection if contact available (Rang 10-12 - C)
-        if party.get('contact'):
-            self._add_cta_section(section, party['contact'])
-    
-    def _add_loc_section(self, section: ET.Element, location_details: list):
-        """Ajoute les détails de localisation (Rang 6 - C)."""
-        for loc_detail in location_details:
-            loc = ET.SubElement(section, "Loc")
-            ET.SubElement(loc, "LocationQualifier").text = loc_detail.get('qualifier', 'ZZZ')
-            ET.SubElement(loc, "LocationIdentifier").text = loc_detail.get('identifier', '')
-            if loc_detail.get('description'):
-                ET.SubElement(loc, "LocationDescription").text = loc_detail['description']
-    
-    def _add_rff_sections(self, section: ET.Element, references: list):
-        """Ajoute les sections de référence (Rang 7-9 - C)."""
-        for ref in references:
-            rff_section = ET.SubElement(section, "RffSection")
-            reference = ET.SubElement(rff_section, "Reference")
-            ET.SubElement(reference, "ReferenceQualifier").text = ref.get('type', 'ZZZ')
-            ET.SubElement(reference, "ReferenceNumber").text = ref.get('number', '')
+            root = ET.Element("TEIF", nsmap=ns_map)
+            root.set("version", data.get('version', '1.8.8'))
             
-            if ref.get('date'):
-                ref_date = ET.SubElement(rff_section, "ReferenceDate")
-                ET.SubElement(ref_date, "DateTimeQualifier").text = "171"
-                ET.SubElement(ref_date, "DateTime").text = ref['date']
-    
-    def _add_cta_section(self, section: ET.Element, contact: dict):
-        """Ajoute la section contact (Rang 10-12 - C)."""
-        cta_section = ET.SubElement(section, "CtaSection")
-        contact_elem = ET.SubElement(cta_section, "Contact")
-        
-        ET.SubElement(contact_elem, "ContactFunctionCode").text = contact.get('function_code', 'IC')
-        if contact.get('name'):
-            ET.SubElement(contact_elem, "ContactName").text = contact['name']
-        
-        # Communication details
-        if contact.get('phone') or contact.get('email') or contact.get('fax'):
-            comm = ET.SubElement(cta_section, "Communication")
-            ET.SubElement(comm, "CommunicationChannelQualifier").text = "TE"
-            if contact.get('phone'):
-                ET.SubElement(comm, "CommunicationChannelIdentifier").text = contact['phone']
-            elif contact.get('email'):
-                ET.SubElement(comm, "CommunicationChannelIdentifier").text = contact['email']
-            elif contact.get('fax'):
-                ET.SubElement(comm, "CommunicationChannelIdentifier").text = contact['fax']
-    
-    def _add_location_sections(self, invoice_body: ET.Element, data: dict):
-        """Ajoute les sections de localisation (Rang 13-14 - C)."""
-        locations = data.get('locations', [])
-        if not locations:
-            return
+            # Create the header section
+            header = ET.SubElement(root, "Header")
+            self._add_header(header, data)
             
-        for location in locations:
-            loc_section = ET.SubElement(invoice_body, "LocSection")
-            loc_details = ET.SubElement(loc_section, "LocDetails")
-            ET.SubElement(loc_details, "LocationQualifier").text = location.get('qualifier', 'ZZZ')
-            ET.SubElement(loc_details, "LocationIdentifier").text = location.get('identifier', '')
-            if location.get('description'):
-                ET.SubElement(loc_details, "LocationDescription").text = location['description']
-    
-    def _add_payment_section(self, invoice_body: ET.Element, data: dict):
-        """Ajoute la section paiement (Rang 15-20 - C)."""
-        payment_info = data.get('payment_info', {})
-        
-        if payment_info or data.get('payment_terms'):
-            pyt_section = ET.SubElement(invoice_body, "PytSection")
-            pyt = ET.SubElement(pyt_section, "Pyt")
+            # Create the body section
+            body = ET.SubElement(root, "Body")
             
-            # Payment terms
-            terms_code = payment_info.get('terms_code', '1')
-            terms_desc = payment_info.get('terms_description') or data.get('payment_terms', 'Net 30 jours')
+            # Add BGM (Beginning of Message)
+            if 'bgm' in data:
+                self._add_bgm_section(body, data['bgm'])
             
-            ET.SubElement(pyt, "PaymentTermsTypeCode").text = terms_code
-            ET.SubElement(pyt, "PaymentTermsDescription").text = terms_desc
+            # Add dates
+            if 'dates' in data and data['dates']:
+                self._add_dates(body, data['dates'])
             
-            # PytDtm if due date available (Rang 17 - C)
-            if payment_info.get('due_date'):
-                pyt_dtm = ET.SubElement(pyt_section, "PytDtm")
-                ET.SubElement(pyt_dtm, "DateTimeQualifier").text = "13"
-                ET.SubElement(pyt_dtm, "DateTime").text = payment_info['due_date']
+            # Add partners
+            if 'partners' in data and data['partners']:
+                self._add_partners(body, data['partners'])
             
-            # PytMoa if payment amount specified (Rang 18 - C)
-            if payment_info.get('amount'):
-                pyt_moa = ET.SubElement(pyt_section, "PytMoa")
-                moa = ET.SubElement(pyt_moa, "Moa")
-                ET.SubElement(moa, "MonetaryAmountTypeQualifier").text = "9"
-                ET.SubElement(moa, "MonetaryAmount").text = f"{payment_info['amount']:.3f}"
-                ET.SubElement(moa, "CurrencyCode").text = "TND"
+            # Add payment terms
+            if 'payment_terms' in data and data['payment_terms']:
+                self._add_payment_terms(body, data['payment_terms'])
             
-            # PytPai if payment instructions available (Rang 19 - C)
-            if payment_info.get('instructions'):
-                pyt_pai = ET.SubElement(pyt_section, "PytPai")
-                ET.SubElement(pyt_pai, "PaymentInstructionCode").text = payment_info['instructions'].get('code', '1')
-                if payment_info['instructions'].get('description'):
-                    ET.SubElement(pyt_pai, "PaymentInstructionDescription").text = payment_info['instructions']['description']
+            # Add line items
+            if 'lines' in data and data['lines']:
+                self._add_line_items(body, data)
             
-            # PytFii if financial institution available (Rang 20 - C)
-            if payment_info.get('bank_details'):
-                self._add_pyt_fii(pyt_section, payment_info['bank_details'])
-    
-    def _add_pyt_fii(self, section: ET.Element, bank_details: dict):
-        """Ajoute les informations d'institution financière pour paiement (Rang 20 - C)."""
-        pyt_fii = ET.SubElement(section, "PytFii")
-        ET.SubElement(pyt_fii, "PartyQualifier").text = "BK"
-        
-        if bank_details.get('bank_code'):
-            ET.SubElement(pyt_fii, "PartyIdentifier").text = bank_details['bank_code']
-        if bank_details.get('bank_name'):
-            ET.SubElement(pyt_fii, "PartyName").text = bank_details['bank_name']
-        if bank_details.get('account_number'):
-            ET.SubElement(pyt_fii, "AccountNumber").text = bank_details['account_number']
-    
-    def _add_ftx_sections(self, invoice_body: ET.Element, data: dict):
-        """Ajoute les sections de texte libre (Rang 21 - C)."""
-        free_texts = data.get('free_texts', [])
-        for text in free_texts:
-            ftx = ET.SubElement(invoice_body, "Ftx")
-            ET.SubElement(ftx, "TextSubjectQualifier").text = text.get('subject', 'ZZZ')
-            ET.SubElement(ftx, "TextFunctionCode").text = text.get('function', '1')
-            if text.get('content'):
-                ET.SubElement(ftx, "TextLiteral").text = text['content']
-    
-    def _add_special_conditions(self, invoice_body: ET.Element, data: dict):
-        """Ajoute les conditions spéciales (Rang 22-23 - C)."""
-        special_conditions = data.get('special_conditions', [])
-        if not special_conditions:
-            return
+            # Add invoice totals
+            if 'totals' in data:
+                self._add_invoice_totals(body, data['totals'])
             
-        conditions_section = ET.SubElement(invoice_body, "SpecialConditions")
-        for condition in special_conditions:
-            special_condition = ET.SubElement(conditions_section, "SpecialCondition")
-            ET.SubElement(special_condition, "ConditionCode").text = condition.get('code', 'ZZZ')
-            if condition.get('description'):
-                ET.SubElement(special_condition, "ConditionDescription").text = condition['description']
-    
-    def _add_line_sections(self, invoice_body: ET.Element, data: dict):
-        """Ajoute les sections lignes (Rang 24+ - M)."""
-        items = data.get('items', [])
-        
-        # If no items, create a default line
-        if not items:
-            items = [{
-                'description': 'Service/Produit',
-                'quantity': 1.0,
-                'unit_price': data.get('amount_ht', 0.0),
-                'total_price': data.get('amount_ht', 0.0),
-                'tax_rate': 19.0
-            }]
-        
-        for i, item in enumerate(items, 1):
-            self._add_line_section(invoice_body, item, i, data.get('invoice_date'))
-    
-    def _add_line_section(self, invoice_body: ET.Element, item: dict, line_number: int, invoice_date: str):
-        """Ajoute une section ligne individuelle avec tous les éléments TEIF."""
-        lin_section = ET.SubElement(invoice_body, "LinSection", lineNumber=str(line_number))
-        
-        # Lin (Rang 25 - M)
-        lin = ET.SubElement(lin_section, "Lin")
-        ET.SubElement(lin, "LineItemNumber").text = str(line_number)
-        
-        # LinImd (Rang 26 - M) - Item description
-        lin_imd = ET.SubElement(lin_section, "LinImd")
-        ET.SubElement(lin_imd, "ItemDescriptionType").text = "F"  # Free format
-        ET.SubElement(lin_imd, "ItemDescription").text = item.get('description', 'Service/Produit')
-        
-        # Item code if available
-        if item.get('code'):
-            ET.SubElement(lin_imd, "ItemCode").text = item['code']
-        if item.get('brand'):
-            ET.SubElement(lin_imd, "ItemBrand").text = item['brand']
-        if item.get('model'):
-            ET.SubElement(lin_imd, "ItemModel").text = item['model']
-        
-        # LinApi (Rang 27 - C) - Additional product identification
-        if item.get('api_details'):
-            self._add_lin_api(lin_section, item['api_details'])
-        
-        # LinQty (Rang 28-29 - M) - Quantities
-        self._add_lin_qty(lin_section, item)
-        
-        # LinDtm (Rang 30 - C) - Line dates
-        if item.get('delivery_date') or invoice_date:
-            self._add_lin_dtm(lin_section, item, invoice_date)
-        
-        # LinMoa (Rang 31-33 - M) - Line monetary amounts
-        self._add_lin_moa(lin_section, item)
-        
-        # LinTax (Rang 34-36 - M) - Line tax information
-        self._add_lin_tax(lin_section, item)
-        
-        # LinAlc (Rang 37-40 - C) - Line allowances/charges
-        if item.get('allowances_charges'):
-            self._add_lin_alc(lin_section, item['allowances_charges'])
-        
-        # SubLin (Rang 41 - C) - Sub-line details
-        if item.get('sub_lines'):
-            self._add_sub_lin(lin_section, item['sub_lines'])
-        
-        # LinRff (Rang 42 - C) - Line references
-        self._add_lin_rff(lin_section, line_number, item)
-        
-        # LinFtx (Rang 43 - C) - Line free text
-        if item.get('notes') or item.get('comments'):
-            self._add_lin_ftx(lin_section, item)
-    
-    def _add_lin_api(self, lin_section: ET.Element, api_details: dict):
-        """Ajoute les détails API de ligne (Rang 27 - C)."""
-        lin_api = ET.SubElement(lin_section, "LinApi")
-        ET.SubElement(lin_api, "ProductIdFunctionQualifier").text = api_details.get('function', 'SA')
-        ET.SubElement(lin_api, "ProductIdentifier").text = api_details.get('identifier', '')
-        if api_details.get('agency'):
-            ET.SubElement(lin_api, "CodeListResponsibleAgencyCode").text = api_details['agency']
-    
-    def _add_lin_qty(self, lin_section: ET.Element, item: dict):
-        """Ajoute les quantités de ligne (Rang 28-29 - M)."""
-        # Invoiced quantity (mandatory)
-        lin_qty_invoiced = ET.SubElement(lin_section, "LinQty")
-        qty_invoiced = ET.SubElement(lin_qty_invoiced, "Qty")
-        ET.SubElement(qty_invoiced, "QuantityQualifier").text = "47"  # Invoiced quantity
-        ET.SubElement(qty_invoiced, "Quantity").text = str(item.get('quantity', 1))
-        ET.SubElement(qty_invoiced, "MeasureUnitCode").text = item.get('unit', 'PCE')
-        
-        # Delivered quantity if different (conditional)
-        delivered_qty = item.get('delivered_quantity')
-        if delivered_qty and delivered_qty != item.get('quantity'):
-            lin_qty_delivered = ET.SubElement(lin_section, "LinQty")
-            qty_delivered = ET.SubElement(lin_qty_delivered, "Qty")
-            ET.SubElement(qty_delivered, "QuantityQualifier").text = "46"  # Delivered quantity
-            ET.SubElement(qty_delivered, "Quantity").text = str(delivered_qty)
-            ET.SubElement(qty_delivered, "MeasureUnitCode").text = item.get('unit', 'PCE')
-    
-    def _add_lin_dtm(self, lin_section: ET.Element, item: dict, invoice_date: str):
-        """Ajoute les dates de ligne (Rang 30 - C)."""
-        # Delivery date
-        delivery_date = item.get('delivery_date', invoice_date)
-        if delivery_date:
-            lin_dtm = ET.SubElement(lin_section, "LinDtm")
-            dtm = ET.SubElement(lin_dtm, "Dtm")
-            ET.SubElement(dtm, "DateTimeQualifier").text = "35"  # Delivery date
-            ET.SubElement(dtm, "DateTime").text = delivery_date
-    
-    def _add_lin_moa(self, lin_section: ET.Element, item: dict):
-        """Ajoute les montants monétaires de ligne (Rang 31-33 - M)."""
-        # Unit price (mandatory)
-        unit_price = item.get('unit_price', 0.0)
-        lin_moa_unit = ET.SubElement(lin_section, "LinMoa")
-        moa_unit = ET.SubElement(lin_moa_unit, "Moa")
-        ET.SubElement(moa_unit, "MonetaryAmountTypeQualifier").text = "146"  # Unit price
-        ET.SubElement(moa_unit, "MonetaryAmount").text = f"{unit_price:.3f}"
-        ET.SubElement(moa_unit, "CurrencyCode").text = "TND"
-        
-        # Line total amount (mandatory)
-        line_total = item.get('total_amount', unit_price * item.get('quantity', 1))
-        lin_moa_total = ET.SubElement(lin_section, "LinMoa")
-        moa_total = ET.SubElement(lin_moa_total, "Moa")
-        ET.SubElement(moa_total, "MonetaryAmountTypeQualifier").text = "203"  # Line item amount
-        ET.SubElement(moa_total, "MonetaryAmount").text = f"{line_total:.3f}"
-        ET.SubElement(moa_total, "CurrencyCode").text = "TND"
-        
-        # Tax amount if specified (conditional)
-        tax_amount = item.get('tax_amount')
-        if tax_amount:
-            lin_moa_tax = ET.SubElement(lin_section, "LinMoa")
-            moa_tax = ET.SubElement(lin_moa_tax, "Moa")
-            ET.SubElement(moa_tax, "MonetaryAmountTypeQualifier").text = "124"  # Tax amount
-            ET.SubElement(moa_tax, "MonetaryAmount").text = f"{tax_amount:.3f}"
-            ET.SubElement(moa_tax, "CurrencyCode").text = "TND"
-    
-    def _add_lin_tax(self, lin_section: ET.Element, item: dict):
-        """Ajoute les informations de taxe de ligne (Rang 34-36 - M)."""
-        lin_tax = ET.SubElement(lin_section, "LinTax")
-        tax = ET.SubElement(lin_tax, "Tax")
-        
-        # Tax type (TVA for Tunisia)
-        ET.SubElement(tax, "DutyTaxFeeTypeCode").text = "TVA"
-        
-        # Tax category and rate
-        tax_rate = item.get('tax_rate', 19.0)  # Default 19% TVA
-        tax_category = item.get('tax_category', 'S')  # Standard rate
-        
-        ET.SubElement(tax, "DutyTaxFeeCategoryCode").text = tax_category
-        ET.SubElement(tax, "DutyTaxFeeRate").text = f"{tax_rate:.2f}"
-        
-        # Tax exemption reason if applicable
-        if tax_category in ['E', 'Z'] and item.get('tax_exemption_reason'):
-            ET.SubElement(tax, "DutyTaxFeeExemptionReasonCode").text = item['tax_exemption_reason']
-        
-        # Tax amount
-        tax_amount = item.get('tax_amount', 0.0)
-        lin_tax_moa = ET.SubElement(lin_tax, "Moa")
-        ET.SubElement(lin_tax_moa, "MonetaryAmountTypeQualifier").text = "124"
-        ET.SubElement(lin_tax_moa, "MonetaryAmount").text = f"{tax_amount:.3f}"
-        ET.SubElement(lin_tax_moa, "CurrencyCode").text = "TND"
-    
-    def _add_lin_alc(self, lin_section: ET.Element, allowances_charges: list):
-        """Ajoute les remises/charges de ligne (Rang 37-40 - C)."""
-        for alc_data in allowances_charges:
-            lin_alc = ET.SubElement(lin_section, "LinAlc")
-            alc = ET.SubElement(lin_alc, "Alc")
+            # Add tax totals
+            if 'tax_totals' in data:
+                self._add_tax_totals(body, data['tax_totals'])
             
-            ET.SubElement(alc, "AllowanceChargeQualifier").text = alc_data.get('qualifier', 'A')
-            ET.SubElement(alc, "AllowanceChargeNumber").text = alc_data.get('number', '1')
+            # Add legal monetary totals
+            if 'monetary_totals' in data:
+                self._add_legal_monetary_totals(body, data['monetary_totals'])
             
-            # Percentage if applicable
-            if alc_data.get('percentage'):
-                ET.SubElement(alc, "AllowanceChargeRate").text = f"{alc_data['percentage']:.2f}"
+            # Add signature if present
+            if 'signature' in data:
+                self._add_signature(body, data['signature'])
             
-            # Amount
-            lin_alc_moa = ET.SubElement(lin_alc, "Moa")
-            ET.SubElement(lin_alc_moa, "MonetaryAmountTypeQualifier").text = "8"
-            ET.SubElement(lin_alc_moa, "MonetaryAmount").text = f"{alc_data.get('amount', 0.0):.3f}"
-            ET.SubElement(lin_alc_moa, "CurrencyCode").text = "TND"
+            # Generate the XML string
+            rough_string = ET.tostring(root, encoding='utf-8')
             
-            # Description
-            if alc_data.get('description'):
-                lin_alc_ftx = ET.SubElement(lin_alc, "Ftx")
-                ET.SubElement(lin_alc_ftx, "TextSubjectQualifier").text = "ZZZ"
-                ET.SubElement(lin_alc_ftx, "TextLiteral").text = alc_data['description']
-    
-    def _add_sub_lin(self, lin_section: ET.Element, sub_lines: list):
-        """Ajoute les sous-lignes (Rang 41 - C)."""
-        for i, sub_line in enumerate(sub_lines, 1):
-            sub_lin = ET.SubElement(lin_section, "SubLin")
-            ET.SubElement(sub_lin, "SubLineItemNumber").text = str(i)
-            ET.SubElement(sub_lin, "SubLineItemDescription").text = sub_line.get('description', '')
-            
-            if sub_line.get('quantity'):
-                ET.SubElement(sub_lin, "SubLineQuantity").text = str(sub_line['quantity'])
-            if sub_line.get('unit_price'):
-                ET.SubElement(sub_lin, "SubLineUnitPrice").text = f"{sub_line['unit_price']:.3f}"
-    
-    def _add_lin_rff(self, lin_section: ET.Element, line_number: int, item: dict):
-        """Ajoute les références de ligne (Rang 42 - C)."""
-        lin_rff = ET.SubElement(lin_section, "LinRff")
-        rff = ET.SubElement(lin_rff, "Rff")
-        ET.SubElement(rff, "ReferenceQualifier").text = "LI"  # Line item reference
-        ET.SubElement(rff, "ReferenceNumber").text = item.get('reference', f"LINE-{line_number}")
-        
-        # Additional references if available
-        if item.get('purchase_order_ref'):
-            po_rff = ET.SubElement(lin_section, "LinRff")
-            po_ref = ET.SubElement(po_rff, "Rff")
-            ET.SubElement(po_ref, "ReferenceQualifier").text = "ON"  # Purchase order
-            ET.SubElement(po_ref, "ReferenceNumber").text = item['purchase_order_ref']
-    
-    def _add_lin_ftx(self, lin_section: ET.Element, item: dict):
-        """Ajoute le texte libre de ligne (Rang 43 - C)."""
-        notes = item.get('notes') or item.get('comments', '')
-        if notes:
-            lin_ftx = ET.SubElement(lin_section, "LinFtx")
-            ftx = ET.SubElement(lin_ftx, "Ftx")
-            ET.SubElement(ftx, "TextSubjectQualifier").text = "ZZZ"
-            ET.SubElement(ftx, "TextFunctionCode").text = "1"
-            ET.SubElement(ftx, "TextLiteral").text = notes
-    
-    def _add_invoice_moa(self, invoice_body: ET.Element, data: dict):
-        """Ajoute les montants de facture (Rang 41-42 - M)."""
-        invoice_moa = ET.SubElement(invoice_body, "InvoiceMoa")
-        
-        # Amount excluding VAT
-        moa_ht = ET.SubElement(invoice_moa, "Moa")
-        ET.SubElement(moa_ht, "MonetaryAmountTypeQualifier").text = "86"  # Total excluding VAT
-        ET.SubElement(moa_ht, "MonetaryAmount").text = f"{data.get('amount_ht', 0.0):.3f}"
-        ET.SubElement(moa_ht, "CurrencyCode").text = "TND"
-        
-        # Total amount including VAT (if different)
-        total_amount = data.get('total_amount', data.get('gross_amount', 0.0))
-        if total_amount != data.get('amount_ht', 0.0):
-            moa_ttc = ET.SubElement(invoice_moa, "Moa")
-            ET.SubElement(moa_ttc, "MonetaryAmountTypeQualifier").text = "125"  # Total including VAT
-            ET.SubElement(moa_ttc, "MonetaryAmount").text = f"{total_amount:.3f}"
-            ET.SubElement(moa_ttc, "CurrencyCode").text = "TND"
-    
-    def _add_invoice_tax(self, invoice_body: ET.Element, data: dict):
-        """Ajoute les informations de taxe (Rang 46-48 - M)."""
-        invoice_tax = ET.SubElement(invoice_body, "InvoiceTax")
-        tax = ET.SubElement(invoice_tax, "Tax")
-        
-        ET.SubElement(tax, "DutyTaxFeeTypeCode").text = "TVA"
-        
-        # Determine tax rate
-        tax_rate = 19.0  # Default Tunisian VAT rate
-        items = data.get('items', [])
-        if items and items[0].get('tax_rate'):
-            tax_rate = items[0]['tax_rate']
-            
-        ET.SubElement(tax, "DutyTaxFeeRate").text = f"{tax_rate:.2f}"
-        
-        tax_payment_date = ET.SubElement(tax, "TaxPaymentDate")
-        ET.SubElement(tax_payment_date, "DateTimeQualifier").text = "140"
-        ET.SubElement(tax_payment_date, "DateTime").text = data.get('invoice_date', datetime.now().strftime("%Y-%m-%d"))
-        
-        # Tax amount
-        moa = ET.SubElement(tax, "Moa")
-        ET.SubElement(moa, "MonetaryAmountTypeQualifier").text = "124"  # Tax amount
-        ET.SubElement(moa, "MonetaryAmount").text = f"{data.get('tva_amount', 0.0):.3f}"
-        ET.SubElement(moa, "CurrencyCode").text = "TND"
-    
-    def _add_invoice_alc(self, invoice_body: ET.Element, data: dict):
-        """Ajoute les remises/charges de facture (Rang 49-52 - C)."""
-        allowances_charges = data.get('allowances_charges', [])
-        if not allowances_charges:
-            return
-            
-        for alc_data in allowances_charges:
-            invoice_alc = ET.SubElement(invoice_body, "InvoiceAlc")
-            alc = ET.SubElement(invoice_alc, "Alc")
-            
-            ET.SubElement(alc, "AllowanceChargeQualifier").text = alc_data.get('qualifier', 'A')  # A=Allowance, C=Charge
-            ET.SubElement(alc, "AllowanceChargeNumber").text = alc_data.get('number', '1')
-            
-            # Amount
-            moa = ET.SubElement(invoice_alc, "Moa")
-            ET.SubElement(moa, "MonetaryAmountTypeQualifier").text = "8"  # Allowance/charge amount
-            ET.SubElement(moa, "MonetaryAmount").text = f"{alc_data.get('amount', 0.0):.3f}"
-            ET.SubElement(moa, "CurrencyCode").text = "TND"
-            
-            # Free text if available
-            if alc_data.get('description'):
-                ftx = ET.SubElement(invoice_alc, "Ftx")
-                ET.SubElement(ftx, "TextSubjectQualifier").text = "ZZZ"
-                ET.SubElement(ftx, "TextLiteral").text = alc_data['description']
-    
-    def _add_additional_documents(self, root: ET.Element, data: dict):
-        """Ajoute les documents additionnels (Rang 53-54 - C)."""
-        additional_docs = data.get('additional_documents', [])
-        if not additional_docs:
-            return
-            
-        for doc in additional_docs:
-            add_docs = ET.SubElement(root, "AdditionnalDocuments")
-            ET.SubElement(add_docs, "DocumentTypeCode").text = doc.get('type', 'ZZZ')
-            ET.SubElement(add_docs, "DocumentNumber").text = doc.get('number', '')
-            if doc.get('description'):
-                ET.SubElement(add_docs, "DocumentDescription").text = doc['description']
-            
-            if doc.get('date'):
-                dtm = ET.SubElement(add_docs, "Dtm")
-                ET.SubElement(dtm, "DateTimeQualifier").text = "137"
-                ET.SubElement(dtm, "DateTime").text = doc['date']
-    
-    def _add_ref_ttn_val(self, root: ET.Element, data: dict):
-        """Ajoute la référence TTN (Rang 55-57 - M)."""
-        ref_ttn_val = ET.SubElement(root, "RefTtnVal")
-        reference = ET.SubElement(ref_ttn_val, "Reference")
-        
-        ET.SubElement(reference, "ReferenceQualifier").text = "AAK"
-        
-        # Generate unique reference
-        invoice_num = data.get('invoice_number', 'UNKNOWN')
-        ref_number = f"{invoice_num}-REF-{datetime.now().strftime('%Y%m%d')}"
-        ET.SubElement(reference, "ReferenceNumber").text = ref_number
-        
-        # Reference date
-        ref_date = ET.SubElement(reference, "ReferenceDate")
-        ET.SubElement(ref_date, "DateTimeQualifier").text = "171"
-        ET.SubElement(ref_date, "DateTime").text = data.get('invoice_date', datetime.now().strftime("%Y-%m-%d"))
-    
-    def _add_signature(self, root: ET.Element, signature_data: dict = None):
-        """Ajoute la section signature (M)."""
-        signature = ET.SubElement(root, "Signature")
-        signature.set("xmlns:ds", self.ds_namespace)
-        
-        # Signed info
-        signed_info = ET.SubElement(signature, "ds:SignedInfo")
-        
-        # Canonicalization method
-        canon_method = ET.SubElement(signed_info, "ds:CanonicalizationMethod")
-        canon_method.set("Algorithm", "http://www.w3.org/TR/2001/REC-xml-c14n-20010315")
-        
-        # Signature method
-        sig_method = ET.SubElement(signed_info, "ds:SignatureMethod")
-        sig_method.set("Algorithm", "http://www.w3.org/2000/09/xmldsig#rsa-sha1")
-        
-        # Placeholder for actual signature implementation
-        if signature_data:
-            # Add actual signature data if provided
-            pass
-    
-    def _format_xml(self, root: ET.Element) -> str:
-        """Formate le XML avec indentation."""
-        rough_string = ET.tostring(root, encoding='unicode')
-        reparsed = minidom.parseString(rough_string)
-        return reparsed.toprettyxml(indent="    ", encoding=None)
-    
-    def validate_xml_structure(self, xml_string: str) -> tuple[bool, list]:
-        """
-        Valide la structure XML TEIF.
-        
-        Returns:
-            tuple: (is_valid, list_of_errors)
-        """
-        errors = []
-        
-        try:
-            root = ET.fromstring(xml_string)
-        except ET.ParseError as e:
-            return False, [f"XML Parse Error: {e}"]
-        
-        # Check mandatory elements
-        mandatory_elements = [
-            "InvoiceHeader", "Bgm", "Dtm", 
-            "PartnerSection", "LinSection", 
-            "InvoiceMoa", "InvoiceTax", "RefTtnVal", "Signature"
-        ]
-        
-        for element in mandatory_elements:
-            if root.find(f".//{element}") is None:
-                errors.append(f"Missing mandatory element: {element}")
-        
-        # Check partner sections
-        supplier_section = root.find(".//PartnerSection[@role='supplier']")
-        buyer_section = root.find(".//PartnerSection[@role='buyer']")
-        
-        if supplier_section is None:
-            errors.append("Missing supplier PartnerSection")
-        if buyer_section is None:
-            errors.append("Missing buyer PartnerSection")
-        
-        return len(errors) == 0, errors
+            # Pretty print the XML
+            try:
+                # Parse the XML and pretty print it
+                reparsed = minidom.parseString(rough_string)
+                pretty_xml = reparsed.toprettyxml(indent="  ", encoding='utf-8').decode('utf-8')
+                
+                # Remove the XML declaration added by toprettyxml
+                pretty_xml = pretty_xml[pretty_xml.find('?>') + 2:].lstrip()
+                
+                # Return with our own XML declaration
+                return '<?xml version="1.0" encoding="UTF-8"?>\n' + pretty_xml
+                
+            except Exception as e:
+                # In case of formatting error, return unformatted XML with a warning
+                self.logger.warning(f"Error formatting XML: {str(e)}")
+                return '<?xml version="1.0" encoding="UTF-8"?>\n' + rough_string.decode('utf-8')
+                
+        except Exception as e:
+            raise ET.ParseError(f"Error generating XML: {str(e)}")
 
-    def _validate_and_clean_data(self, data: dict) -> dict:
-        """Valide et nettoie les données d'entrée."""
-        cleaned_data = data.copy()
+    def _add_invoice_header(self, parent: ET.Element, data: Dict[str, Any]):
+        """
+        Ajoute l'en-tête de la facture avec les identifiants de l'émetteur et du destinataire.
+        """
+        header = ET.SubElement(parent, "InvoiceHeader")
         
-        # Force currency to TND
-        cleaned_data['currency'] = 'TND'
-        
-        # Validate invoice number
-        invoice_num = cleaned_data.get('invoice_number', 'UNKNOWN')
-        if len(invoice_num) < 3 or invoice_num in ['tre', 'UNKNOWN']:
-            cleaned_data['invoice_number'] = f"INV-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-        
-        # Clean and validate company names
-        sender = cleaned_data.get('sender', {})
-        receiver = cleaned_data.get('receiver', {})
-        
-        if not sender.get('name') or sender['name'] in ['Rue du Lac Malaren', 'ENTREPRISE EMETTRICE']:
-            sender['name'] = 'ENTREPRISE EMETTRICE'
-        
-        if not receiver.get('name') or receiver['name'] in ['ENTREPRISE RECEPTRICE']:
-            receiver['name'] = 'CLIENT DESTINATAIRE'
+        # Ajouter l'identifiant de l'émetteur
+        if 'sender_identifier' in data.get('header', {}):
+            sender = ET.SubElement(header, "MessageSenderIdentifier", {"type": "I-01"})
+            sender.text = data['header']['sender_identifier']
             
-        cleaned_data['sender'] = sender
-        cleaned_data['receiver'] = receiver
+        # Ajouter l'identifiant du destinataire
+        if 'receiver_identifier' in data.get('header', {}):
+            receiver = ET.SubElement(header, "MessageReceiverIdentifier", {"type": "I-01"})
+            receiver.text = data['header']['receiver_identifier']
+
+    def _add_invoice_moa_section(self, parent: ET.Element, moa_data: Dict[str, Any]) -> None:
+        """
+        Ajoute la section InvoiceMoa pour les montants de la facture.
         
-        # Ensure amounts are numeric
-        for field in ['total_amount', 'amount_ht', 'tva_amount', 'gross_amount']:
-            if field in cleaned_data:
-                try:
-                    cleaned_data[field] = float(cleaned_data[field])
-                except (ValueError, TypeError):
-                    cleaned_data[field] = 0.0
+        Args:
+            parent: L'élément parent XML
+            moa_data: Dictionnaire contenant les montants de la facture
+        """
+        # Utilisation directe de create_amount_element importé au niveau du module
+        invoice_moa = ET.SubElement(parent, "InvoiceMoa")
         
-        return cleaned_data
+        # Montant principal de la facture
+        if 'amount' in moa_data:
+            create_amount_element(invoice_moa, {
+                'amount': moa_data['amount'],
+                'currency': moa_data.get('currency', 'TND'),
+                'format': 3
+            })
+        
+        # Références et dates associées
+        if 'references' in moa_data:
+            for ref in moa_data['references']:
+                rff = ET.SubElement(invoice_moa, "RffDtm")
+                ET.SubElement(rff, "Reference").text = ref.get('reference', '')
+                if 'date' in ref:
+                    ET.SubElement(rff, "ReferenceDate").text = ref['date']
+
+    def _add_invoice_alc_section(self, parent: ET.Element, alc_data: Dict[str, Any]) -> None:
+        """
+        Ajoute la section InvoiceAlc pour les allocations et suppléments de facture.
+        
+        Args:
+            parent: L'élément parent XML
+            alc_data: Dictionnaire contenant les informations d'allocation/supplément avec les clés:
+                - type: Type d'allocation ('I-130' pour allocation, 'I-140' pour supplément)
+                - description: Description de l'allocation/supplément
+                - amount: Montant de l'allocation/supplément (obligatoire)
+                - currency: Code devise (optionnel, défaut: 'TND')
+                - rate: Taux de l'allocation en pourcentage (optionnel)
+                - tax_included: Booléen indiquant si le montant est TTC (optionnel)
+                - tax_amount: Montant de la taxe si tax_included est True (optionnel)
+                - tax_rate: Taux de TVA (optionnel)
+                - reason_code: Code de raison (optionnel)
+                - reason: Description de la raison (optionnel)
+                - references: Liste de références (optionnel)
+        
+        Raises:
+            ValueError: Si les données requises sont manquantes ou invalides
+        """
+        # Validation des données requises
+        if 'amount' not in alc_data:
+            raise ValueError("Le montant de l'allocation/supplément est requis")
+        # Convertir le montant en float si nécessaire
+        try:
+            amount = float(alc_data['amount'])
+        except (ValueError, TypeError) as e:
+            raise ValueError(f"Format de montant d'allocation/supplément invalide: {str(e)}")
+        
+        # Créer l'élément InvoiceAlc
+        invoice_alc = ET.SubElement(parent, "InvoiceAlc")
+        
+        # Préparer les données pour create_adjustment
+        adjustment_data = {
+            'type': alc_data.get('type', 'I-130'),
+            'description': alc_data.get('description', ''),
+            'amount': amount,
+            'currency': alc_data.get('currency', 'TND'),
+            'format': 3
+        }
+        
+        # Ajouter le taux si spécifié
+        if 'rate' in alc_data:
+            try:
+                adjustment_data['rate'] = float(alc_data['rate'])
+            except (ValueError, TypeError) as e:
+                raise ValueError(f"Format de taux d'allocation/supplément invalide: {str(e)}")
+        
+        # Ajouter les informations de taxe si nécessaire
+        if alc_data.get('tax_included', False) and 'tax_amount' in alc_data:
+            try:
+                tax_amount = float(alc_data['tax_amount'])
+                amount_ht = amount - tax_amount
+                
+                adjustment_data.update({
+                    'tax_included': True,
+                    'tax_amount': tax_amount,
+                    'amount_ht': amount_ht
+                })
+            except (ValueError, TypeError) as e:
+                raise ValueError(f"Format de montant de taxe invalide: {str(e)}")
+        
+        # Utilisation de la fonction create_adjustment du module amounts
+        create_adjustment(parent=invoice_alc, adjustment_data=adjustment_data)
+        
+        # Ajouter la raison si elle est spécifiée
+        if 'reason_code' in alc_data or 'reason' in alc_data:
+            reason_elem = ET.SubElement(invoice_alc, "AllowanceOrChargeReason")
+            if 'reason_code' in alc_data:
+                ET.SubElement(
+                    reason_elem,
+                    "AllowanceOrChargeReasonCode",
+                    code=str(alc_data['reason_code'])
+                )
+            if 'reason' in alc_data:
+                ET.SubElement(reason_elem, "AllowanceOrChargeReason").text = str(alc_data['reason'])
+        
+        # Taux de TVA (optionnel)
+        if 'tax_rate' in alc_data:
+            try:
+                tax_elem = ET.SubElement(invoice_alc, "Tax")
+                ET.SubElement(tax_elem, "TaxRate").text = str(float(alc_data['tax_rate']))
+            except (ValueError, TypeError) as e:
+                raise ValueError(f"Format de taux de TVA invalide: {str(e)}")
+            
+        # Références de l'allocation
+        if 'references' in alc_data and isinstance(alc_data['references'], list):
+            for ref in alc_data['references']:
+                if not isinstance(ref, dict):
+                    continue
+                rff = ET.SubElement(invoice_alc, "Rff")
+                if 'reference' in ref:
+                    ET.SubElement(rff, "Reference").text = str(ref['reference'])
+                if 'type' in ref:
+                    ET.SubElement(rff, "ReferenceType").text = str(ref['type'])
+
+    def _add_invoice_tax_section(self, parent: ET.Element, tax_data: Dict[str, Any]) -> None:
+        """
+        Ajoute la section InvoiceTax pour les taxes de la facture.
+        
+        Args:
+            parent: L'élément parent XML
+            tax_data: Dictionnaire contenant les informations de taxe
+        """
+        from .sections.amounts import create_tax_amount
+        
+        # Utilisation de la fonction du module amounts pour gérer la création de la taxe
+        create_tax_amount(parent, {
+            'code': tax_data.get('code', 'I-1602'),
+            'type': tax_data.get('name', 'TVA'),
+            'rate': tax_data.get('rate', 0),
+            'amount': tax_data.get('amount'),
+            'currency': tax_data.get('currency', 'TND')
+        })
+
+    # La méthode _add_partner_section a été remplacée par un appel direct à create_partner_section
+
+    def _add_nad_section(self, parent: ET.Element, data: Dict[str, Any]) -> None:
+        """Ajoute une section NAD (Name and Address)."""
+        nad = ET.SubElement(parent, "Nad")
+        ET.SubElement(nad, "PartyIdentifier").text = data.get('id', '')
+        ET.SubElement(nad, "PartyName").text = data.get('name', '')
+        
+        if 'address' in data:
+            addr = data['address']
+            address = ET.SubElement(nad, "Address")
+            ET.SubElement(address, "StreetName").text = addr.get('street', '')
+            ET.SubElement(address, "CityName").text = addr.get('city', '')
+            ET.SubElement(address, "PostalZone").text = addr.get('postal_code', '')
+            ET.SubElement(address, "Country").text = addr.get('country', 'TN')
+
+    def _add_loc_section(self, parent: ET.Element, loc_data: Dict[str, Any]) -> None:
+        """Ajoute une section LOC (Location)."""
+        loc = ET.SubElement(parent, "Loc")
+        ET.SubElement(loc, "LocationIdentifier").text = loc_data.get('id', '')
+        ET.SubElement(loc, "LocationName").text = loc_data.get('name', '')
+
+    def _add_rff_section(self, parent: ET.Element, ref_data: Dict[str, Any]) -> None:
+        """Ajoute une section RFF (Reference)."""
+        rff = ET.SubElement(parent, "Rff")
+        ET.SubElement(rff, "Reference").text = ref_data.get('reference', '')
+        if 'date' in ref_data:
+            ET.SubElement(rff, "ReferenceDate").text = ref_data['date']
+
+    def _add_cta_section(self, parent: ET.Element, contact_data: Dict[str, Any]) -> None:
+        """Ajoute une section CTA (Contact)."""
+        cta = ET.SubElement(parent, "Cta")
+        contact = ET.SubElement(cta, "Contact")
+        ET.SubElement(contact, "Name").text = contact_data.get('name', '')
+        
+        if 'communications' in contact_data:
+            for comm in contact_data['communications']:
+                comm_elem = ET.SubElement(contact, "Communication")
+                ET.SubElement(comm_elem, "Type").text = comm.get('type', '')
+                ET.SubElement(comm_elem, "Value").text = comm.get('value', '')
+
+    def _add_bgm_section(self, parent: ET.Element, data: Dict[str, Any]):
+        """
+        Ajoute la section BGM (Beginning of message).
+        
+        Args:
+            parent: L'élément parent XML
+            data: Dictionnaire contenant les données BGM
+                - document_number: Numéro du document (obligatoire)
+                - document_type: Code du type de document (optionnel, défaut: 'I-11')
+                - document_type_label: Libellé du type de document (optionnel, défaut: 'Facture')
+        """
+        if not isinstance(data, dict):
+            data = {}
+            
+        # Créer l'élément BGM
+        bgm = ET.SubElement(parent, "Bgm")
+        
+        # Ajouter le numéro de document (obligatoire)
+        doc_number = data.get('document_number')
+        if not doc_number:
+            doc_number = f"FACT-{datetime.now().strftime('%Y%m%d%H%M')}"
+            
+        doc_id = ET.SubElement(bgm, "DocumentIdentifier")
+        doc_id.text = doc_number
+        
+        # Ajouter le type de document avec code et libellé
+        doc_type = ET.SubElement(bgm, "DocumentType", {
+            'code': data.get('document_type', 'I-11')  # I-11 = Facture
+        })
+        doc_type.text = data.get('document_type_label', 'Facture')
+        
+        # Ajouter les références si présentes
+        if 'references' in data and data['references']:
+            self._add_references(bgm, data['references'])
+
+    def _add_date_section(self, parent: ET.Element, dates_data: List[Dict[str, Any]]):
+        """Ajoute la section des dates avec le format spécifié et validation.
+        
+        Args:
+            parent: L'élément parent XML
+            dates_data: Liste de dictionnaires contenant:
+                - date_text: La valeur de la date (obligatoire)
+                - function_code: Code de fonction de la date (obligatoire, ex: 'I-31' pour date d'émission)
+                - format: Format de la date (obligatoire, ex: 'ddMMyy')
+        """
+        # Créer l'élément Dtm
+        dtm = ET.SubElement(parent, "Dtm")
+        
+        # Ajouter chaque date
+        for date_info in dates_data:
+            # Valider les champs obligatoires
+            if not all(k in date_info for k in ['date_text', 'function_code', 'format']):
+                continue
+                
+            # Créer l'élément DateText avec les attributs
+            date_elem = ET.SubElement(dtm, "DateText", {
+                'functionCode': str(date_info['function_code']),
+                'format': str(date_info['format'])
+            })
+            date_elem.text = str(date_info['date_text'])
+
+    def _format_date_range(self, date_range: str) -> str:
+        """Formate une plage de dates au format ddMMyy-ddMMyy."""
+        if not date_range or '-' not in date_range:
+            return str(date_range)
+            
+        start, end = date_range.split('-', 1)
+        return f"{self._format_single_date(start)}-{self._format_single_date(end)}"
+
+    def _add_payment_terms(self, parent: ET.Element, payment_terms_data: Dict[str, Any]) -> None:
+        """
+        Add payment terms section to the TEIF XML.
+        
+        Args:
+            parent: The parent XML element
+            payment_terms_data: Dictionary containing payment terms information with keys:
+                - type: Type of payment terms (e.g., 'I-10' for payment on receipt)
+                - description: Description of payment terms (optional)
+                - due_date: Payment due date (optional)
+                - discount_percent: Discount percentage for early payment (optional)
+                - discount_due_date: Due date to qualify for discount (optional)
+        """
+        if not payment_terms_data:
+            return
+            
+        payment_terms = ET.SubElement(parent, "PaymentTerms")
+        
+        # Add payment terms type if provided
+        if 'type' in payment_terms_data:
+            ET.SubElement(payment_terms, "Type").text = str(payment_terms_data['type'])
+        
+        # Add description if provided
+        if 'description' in payment_terms_data:
+            ET.SubElement(payment_terms, "Description").text = str(payment_terms_data['description'])
+        
+        # Add due date if provided
+        if 'due_date' in payment_terms_data:
+            due_date = payment_terms_data['due_date']
+            due_date_elem = ET.SubElement(payment_terms, "DueDate")
+            due_date_elem.text = str(due_date['date'])
+            
+            # Add date format if provided
+            if 'format' in due_date:
+                due_date_elem.set("format", due_date['format'])
+        
+        # Add discount information if provided
+        if 'discount_percent' in payment_terms_data or 'discount_due_date' in payment_terms_data:
+            discount_elem = ET.SubElement(payment_terms, "Discount")
+            
+            if 'discount_percent' in payment_terms_data:
+                ET.SubElement(discount_elem, "Percentage").text = str(payment_terms_data['discount_percent'])
+            
+            if 'discount_due_date' in payment_terms_data:
+                discount_due = payment_terms_data['discount_due_date']
+                discount_due_elem = ET.SubElement(discount_elem, "DueDate")
+                discount_due_elem.text = str(discount_due['date'])
+                
+                # Add date format if provided
+                if 'format' in discount_due:
+                    discount_due_elem.set("format", discount_due['format'])
+
+    def _add_pyt_section(self, parent: ET.Element, term_data: Dict[str, Any]):
+        """Ajoute une section Pyt avec les termes de paiement."""
+        pyt = ET.SubElement(parent, "Pyt")
+        
+        # Code du type de conditions de paiement (obligatoire)
+        if 'code' in term_data:
+            code_elem = ET.SubElement(pyt, "PaymentTearmsTypeCode")
+            code_elem.text = str(term_data['code'])
+        
+        # Description des conditions de paiement (obligatoire)
+        if 'description' in term_data:
+            desc_elem = ET.SubElement(pyt, "PaymentTearmsDescription")
+            desc_elem.text = str(term_data['description'])
+    
+    def _add_pyt_fii_section(self, parent: ET.Element, fi_data: Dict[str, Any]):
+        """Ajoute une section PytFii avec les informations de l'institution financière."""
+        # Créer l'élément PytFii avec l'attribut functionCode
+        pyt_fii = ET.SubElement(parent, "PytFii")
+        if 'function_code' in fi_data:
+            pyt_fii.set("functionCode", str(fi_data['function_code']))
+        
+        # Ajouter les informations de compte si disponibles
+        if 'account' in fi_data and fi_data['account']:
+            account = ET.SubElement(pyt_fii, "AccountHolder")
+            
+            if 'number' in fi_data['account']:
+                acc_num = ET.SubElement(account, "AccountNumber")
+                acc_num.text = str(fi_data['account']['number'])
+            
+            if 'holder' in fi_data['account']:
+                owner = ET.SubElement(account, "OwnerIdentifier")
+                owner.text = str(fi_data['account']['holder'])
+        
+        # Ajouter les informations de l'institution financière
+        if 'institution' in fi_data and fi_data['institution']:
+            inst = fi_data['institution']
+            inst_elem = ET.SubElement(pyt_fii, "InstitutionIdentification")
+            
+            if 'branch_code' in inst:
+                inst_elem.set("nameCode", str(inst['branch_code']))
+                branch = ET.SubElement(inst_elem, "BranchIdentifier")
+                branch.text = str(inst['branch_code'])
+            
+            if 'name' in inst:
+                name = ET.SubElement(inst_elem, "InstitutionName")
+                name.text = str(inst['name'])
+    
+    def _add_invoice_tax_section(self, parent: ET.Element, tax_data: Dict[str, Any], currency: str) -> None:
+        """
+        Ajoute la section des taxes de la facture selon le standard TEIF 1.8.8.
+        
+        Args:
+            parent: L'élément parent XML (InvoiceTax)
+            tax_data: Dictionnaire contenant les informations de taxe:
+                - code: Code de la taxe (ex: 'I-1602' pour TVA)
+                - name: Nom de la taxe (optionnel, défaut: 'TVA')
+                - rate: Taux de taxe en pourcentage (obligatoire)
+                - taxable_amount: Montant taxable (obligatoire)
+                - amount: Montant de la taxe (obligatoire)
+                - currency: Code devise (optionnel, défaut: 'TND')
+                - tax_scheme: Schéma de taxe (optionnel, défaut: 'TVA')
+                - tax_category: Catégorie de taxe (optionnel)
+            currency: Code devise (ex: 'TND')
+        """
+        from decimal import Decimal, ROUND_HALF_UP
+        
+        def format_amount(value):
+            """Formate un montant avec 3 décimales."""
+            if value is None:
+                return None
+            return Decimal(str(value)).quantize(
+                Decimal('0.001'), 
+                rounding=ROUND_HALF_UP
+            )
+        
+        # Créer l'élément TaxTotal
+        tax_total = ET.SubElement(parent, "TaxTotal")
+        
+        # Montant total des taxes
+        tax_amount = ET.SubElement(tax_total, "TaxAmount")
+        tax_amount.text = str(format_amount(tax_data.get('amount', 0)))
+        tax_amount.set('currencyID', currency)
+        
+        # Détails de la taxe
+        tax_subtotal = ET.SubElement(tax_total, "TaxSubtotal")
+        
+        # Montant taxable
+        taxable_amount = ET.SubElement(tax_subtotal, "TaxableAmount")
+        taxable_amount.text = str(format_amount(tax_data.get('taxable_amount', 0)))
+        taxable_amount.set('currencyID', currency)
+        
+        # Montant de la taxe
+        tax_amount = ET.SubElement(tax_subtotal, "TaxAmount")
+        tax_amount.text = str(format_amount(tax_data.get('amount', 0)))
+        tax_amount.set('currencyID', currency)
+        
+        # Catégorie de taxe
+        tax_category = ET.SubElement(tax_subtotal, "TaxCategory")
+        
+        # Taux de taxe
+        tax_percent = ET.SubElement(tax_category, "Percent")
+        tax_percent.text = str(tax_data.get('rate', 19.0))
+        
+        # Schéma de taxe
+        tax_scheme = ET.SubElement(tax_category, "TaxScheme")
+        
+        # ID du schéma de taxe
+        scheme_id = ET.SubElement(tax_scheme, "ID")
+        scheme_id.text = tax_data.get('tax_scheme', 'TVA')
+        
+        # Nom du schéma de taxe
+        scheme_name = ET.SubElement(tax_scheme, "Name")
+        scheme_name.text = tax_data.get('name', 'TVA')
+        
+        # Catégorie de taxe (optionnel)
+        if 'tax_category' in tax_data:
+            category_id = ET.SubElement(tax_category, "ID")
+            category_id.text = tax_data['tax_category']
+        
+        # Type de taxe (optionnel)
+        if 'type' in tax_data:
+            tax_type = ET.SubElement(tax_category, "TaxType")
+            tax_type.text = tax_data['type']
+
+    def _add_tax_detail(self, parent: ET.Element, tax_data: Dict[str, Any], currency: str):
+        """
+        Ajoute les détails de taxe avec validation des référentiels.
+        
+        Args:
+            parent: L'élément parent XML
+            tax_data: Dictionnaire contenant les données de taxe
+                - code: Code du type de taxe (ex: 'I-1602' pour TVA)
+                - type: Type de taxe (optionnel, défaut: 'TVA')
+                - rate: Taux de taxe (obligatoire, ex: 19.0)
+                - taxable_amount: Montant taxable (obligatoire)
+                - amount: Montant de la taxe (obligatoire)
+            currency: Code devise (ex: 'TND')
+        """
+        from .sections.amounts import create_tax_amount
+        from .referentials import validate_tax_type, get_tax_type_description
+        
+        # Préparer les données pour create_tax_amount
+        tax_info = {
+            'code': tax_data.get('type', 'I-1602'),
+            'type': tax_data.get('name', 'TVA'),
+            'rate': float(tax_data.get('rate', 19.0)),
+            'amount': float(tax_data.get('amount', 0)),
+            'currency': currency,
+            'taxable_amount': float(tax_data.get('taxable_amount', 0))
+        }
+        
+        # Utiliser la fonction du module amounts pour créer la taxe
+        create_tax_amount(parent, tax_info)
+
+    def _add_additional_documents(self, parent: ET.Element, docs: List[Dict[str, Any]]):
+        """
+        Ajoute des documents annexes avec validation des types.
+        
+        Args:
+            parent: L'élément parent XML
+            docs: Liste de dictionnaires contenant les informations des documents
+                - id: Identifiant du document (obligatoire)
+                - name: Nom du document
+                - type: Type de document (optionnel, ex: 'I-201' pour Facture)
+                - date: Date du document au format DDMMYY
+                - description: Description supplémentaire (optionnelle)
+        """
+        from .referentials import validate_document_type, get_document_type_description
+        
+        if not docs:
+            return
+            
+        docs_section = ET.SubElement(parent, "AdditionnalDocuments")
+        
+        for doc in docs:
+            if not doc or 'id' not in doc:
+                continue
+                
+            doc_elem = ET.SubElement(docs_section, "AdditionnalDocument")
+            
+            # Identifiant du document (M)
+            ET.SubElement(doc_elem, "AdditionnalDocumentIdentifier").text = str(doc['id'])
+            
+            # Nom du document (C)
+            if 'name' in doc:
+                ET.SubElement(doc_elem, "AdditionnalDocumentName").text = str(doc['name'])
+            
+            # Type de document (C) avec validation
+            if 'type' in doc:
+                doc_type = str(doc['type'])
+                type_elem = ET.SubElement(doc_elem, "AdditionnalDocumentTypeCode")
+                type_elem.text = doc_type
+                
+                # Ajouter la description si le type est valide
+                if validate_document_type(doc_type):
+                    type_elem.set('description', get_document_type_description(doc_type))
+            
+            # Date du document (C)
+            if 'date' in doc:
+                date_elem = ET.SubElement(doc_elem, "AdditionnalDocumentDate")
+                ET.SubElement(date_elem, "DateText", format="DDMMYY").text = str(doc['date'])
+                
+            # Description supplémentaire (C)
+            if 'description' in doc:
+                ET.SubElement(doc_elem, "AdditionnalDocumentDescription").text = str(doc['description'])
+
+    def _add_ttn_reference(self, parent: ET.Element, ref_data: Dict[str, str]):
+        """
+        Ajoute la référence TTN avec QR code et validation des types de référence.
+        
+        Args:
+            parent: L'élément parent XML
+            ref_data: Dictionnaire contenant les données de référence
+                - number: Numéro de référence (obligatoire)
+                - type: Type de référence (optionnel, défaut: 'TTNREF')
+                - date: Date de référence au format DDMMYY (optionnel)
+                - qr_code: Code QR encodé en base64 (optionnel)
+        """
+        from .referentials import validate_reference_type, get_reference_type_description
+        
+        if not ref_data or 'number' not in ref_data:
+            return
+            
+        ref = ET.SubElement(parent, "RefTtnVal")
+        
+        # Type de référence (M) avec validation
+        ref_type = ref_data.get('type', 'TTNREF')
+        ref_elem = ET.SubElement(ref, "Reference", refID=ref_type)
+        
+        # Ajouter la description si le type est valide
+        if validate_reference_type(ref_type):
+            ref_elem.set('description', get_reference_type_description(ref_type))
+            
+        # Numéro de référence (M)
+        ref_elem.text = str(ref_data['number'])
+        
+        # Date de référence (C)
+        if 'date' in ref_data:
+            date_elem = ET.SubElement(ref, "ReferenceDate")
+            ET.SubElement(date_elem, "DateText", format="DDMMYY").text = str(ref_data['date'])
+        
+        # QR Code (C) - doit être encodé en base64
+        if 'qr_code' in ref_data:
+            qr_elem = ET.SubElement(ref, "ReferenceCev", format="QR-CODE")
+            qr_elem.text = str(ref_data['qr_code'])
+            
+        # Version du standard (C)
+        ET.SubElement(ref, "StandardVersion").text = "1.8.8"
+
+    def _add_special_conditions(self, parent: ET.Element, conditions: Union[str, List[Union[str, Dict[str, str]]]]):
+        """
+        Ajoute les conditions spéciales à la facture avec validation des codes de langue.
+        
+        Args:
+            parent: L'élément parent XML
+            conditions: Peut être:
+                - Une chaîne de caractères (condition unique en français)
+                - Une liste de chaînes (plusieurs conditions en français)
+                - Une liste de dictionnaires avec 'text' et 'language'
+        """
+        from .referentials import validate_language_code, DEFAULT_LANGUAGE
+        
+        if not conditions:
+            return
+            
+        # Créer la section des conditions spéciales
+        cond_section = ET.SubElement(parent, "SpecialConditions")
+        
+        # Gérer le cas d'une chaîne unique
+        if isinstance(conditions, str):
+            ET.SubElement(cond_section, "SpecialCondition", 
+                         lang=DEFAULT_LANGUAGE).text = conditions.strip()
+            return
+            
+        # Vérifier que c'est une liste
+        if not isinstance(conditions, list):
+            return
+            
+        # Traiter chaque condition
+        for cond in conditions:
+            if not cond:
+                continue
+                
+            # Cas d'une chaîne simple
+            if isinstance(cond, str):
+                ET.SubElement(cond_section, "SpecialCondition", 
+                             lang=DEFAULT_LANGUAGE).text = cond.strip()
+                
+            # Cas d'un dictionnaire avec langue et texte
+            elif isinstance(cond, dict) and 'text' in cond:
+                lang = str(cond.get('language', DEFAULT_LANGUAGE))
+                # Valider le code de langue
+                if not validate_language_code(lang):
+                    lang = DEFAULT_LANGUAGE
+                    
+                ET.SubElement(cond_section, "SpecialCondition", 
+                             lang=lang).text = str(cond['text']).strip()
+
+            
+    def _add_signature(self, parent: ET.Element, sig_data: Dict[str, Any]) -> None:
+        """
+        Ajoute une signature électronique XAdES-B conforme au standard TTN 1.8.8.
+        
+        Args:
+            parent: L'élément parent où ajouter la signature
+            sig_data: Dictionnaire contenant les données de signature
+                - id: Identifiant de la signature (SigFrs, SigCEv, SigTTN)
+                - x509_cert: Certificat X509 en base64 (obligatoire)
+                - signing_time: Date de signature au format ISO 8601 (optionnel, par défaut maintenant)
+                - signature_value: Valeur de la signature en base64 (optionnel pour génération)
+                - digest_value: Valeur de hachage en base64 (optionnel pour génération)
+                - signer_role: Rôle du signataire (optionnel, défaut: 'Fournisseur')
+                - signature_policy: Dictionnaire de configuration de la politique de signature (optionnel)
+        
+        Raises:
+            ValueError: Si les données de signature requises sont manquantes ou invalides
+        """
+        from .referentials import validate_signature_role, get_signature_role_description
+        from datetime import datetime, timezone
+        import base64
+        import re
+        
+        # Validation des entrées
+        if not sig_data or 'x509_cert' not in sig_data:
+            raise ValueError("Les données de signature sont incomplètes. Un certificat X509 est requis.")
+            
+        # Nettoyer et valider l'ID de signature
+        sig_id = str(sig_data.get('id', 'SigFrs')).strip()
+        if not sig_id:
+            sig_id = 'SigFrs'
+            
+        # Valider le certificat (format base64)
+        cert_pem = sig_data['x509_cert'].strip()
+        try:
+            # Vérifier que c'est un certificat valide en base64
+            base64.b64decode(cert_pem, validate=True)
+        except Exception as e:
+            raise ValueError(f"Le certificat fourni n'est pas un certificat X509 valide en base64: {str(e)}")
+        
+        # Créer l'élément Signature avec l'ID approprié
+        sig = ET.SubElement(parent, f"{{{self.ns['ds']}}}Signature", Id=sig_id)
+        
+        # 1. SignedInfo
+        signed_info = ET.SubElement(sig, f"{{{self.ns['ds']}}}SignedInfo")
+        
+        # 1.1 Méthode de canonicalisation (M)
+        ET.SubElement(
+            signed_info,
+            f"{{{self.ns['ds']}}}CanonicalizationMethod",
+            Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"
+        )
+        
+        # 1.2 SignatureMethod (M)
+        ET.SubElement(
+            signed_info,
+            f"{{{self.ns['ds']}}}SignatureMethod",
+            Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"
+        )
+        
+        # 1.3 Reference pour le document (M)
+        ref = ET.SubElement(
+            signed_info,
+            f"{{{self.ns['ds']}}}Reference",
+            URI=f"#{sig_id}"
+        )
+        
+        # 1.3.1 Transforms (M)
+        transforms = ET.SubElement(ref, f"{{{self.ns['ds']}}}Transforms")
+        ET.SubElement(
+            transforms,
+            f"{{{self.ns['ds']}}}Transform",
+            Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"
+        )
+        
+        # 1.3.2 DigestMethod (M)
+        ET.SubElement(
+            ref,
+            f"{{{self.ns['ds']}}}DigestMethod",
+            Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"
+        )
+        
+        # 1.3.3 DigestValue (M) - Laissé vide pour le moment, sera calculé après
+        digest_value = sig_data.get('digest_value', '')  # À calculer plus tard
+        ET.SubElement(
+            ref,
+            f"{{{self.ns['ds']}}}DigestValue"
+        ).text = digest_value
+        
+        # 1.4 Reference pour les propriétés signées (M)
+        ref = ET.SubElement(
+            signed_info,
+            f"{{{self.ns['ds']}}}Reference",
+            Type="http://uri.etsi.org/01903#SignedProperties",
+            URI=f"#xades-{sig_id}"
+        )
+        
+        # 1.4.1 Transform pour les propriétés signées (M)
+        transforms = ET.SubElement(ref, f"{{{self.ns['ds']}}}Transforms")
+        ET.SubElement(
+            transforms,
+            f"{{{self.ns['ds']}}}Transform",
+            Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"
+        )
+        
+        # 1.4.2 DigestMethod pour les propriétés signées (M)
+        ET.SubElement(
+            ref,
+            f"{{{self.ns['ds']}}}DigestMethod",
+            Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"
+        )
+        
+        # 1.4.3 DigestValue pour les propriétés signées (M) - Laissé vide pour le moment
+        ET.SubElement(
+            ref,
+            f"{{{self.ns['ds']}}}DigestValue"
+        ).text = ""  # À calculer plus tard
+        
+        # 2. SignatureValue (M) - Laissé vide pour le moment, sera calculé après
+        signature_value = sig_data.get('signature_value', '')  # À calculer plus tard
+        ET.SubElement(
+            sig,
+            f"{{{self.ns['ds']}}}SignatureValue",
+            Id=f"value-{sig_id}"
+        ).text = signature_value
+        
+        # 3. KeyInfo (M)
+        key_info = ET.SubElement(sig, f"{{{self.ns['ds']}}}KeyInfo")
+        x509_data = ET.SubElement(key_info, f"{{{self.ns['ds']}}}X509Data")
+        ET.SubElement(
+            x509_data,
+            f"{{{self.ns['ds']}}}X509Certificate"
+        ).text = sig_data.get('x509_cert', '')
+        
+        # 4. Object pour les propriétés qualifiées
+        obj = ET.SubElement(sig, f"{{{self.ns['ds']}}}Object")
+        qual_props = ET.SubElement(
+            obj,
+            f"{{{self.ns['xades']}}}QualifyingProperties",
+            Target=f"#{sig_id}"
+        )
+        
+        signed_props = ET.SubElement(
+            qual_props,
+            f"{{{self.ns['xades']}}}SignedProperties",
+            Id=f"xades-{sig_id}"
+        )
+        
+        # 4.1 Propriétés de signature
+        signed_signature_props = ET.SubElement(
+            signed_props,
+            f"{{{self.ns['xades']}}}SignedSignatureProperties"
+        )
+        
+        # 4.1.1 Heure de signature
+        signing_time = sig_data.get('signing_time', datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"))
+        ET.SubElement(
+            signed_signature_props,
+            f"{{{self.ns['xades']}}}SigningTime"
+        ).text = signing_time
+        
+        # 4.1.2 Certificat de signature
+        signing_cert = ET.SubElement(
+            signed_signature_props,
+            f"{{{self.ns['xades']}}}SigningCertificateV2"
+        )
+        cert = ET.SubElement(signing_cert, f"{{{self.ns['xades']}}}Cert")
+        
+        # Empreinte du certificat
+        cert_digest = ET.SubElement(cert, f"{{{self.ns['xades']}}}CertDigest")
+        ET.SubElement(
+            cert_digest,
+            f"{{{self.ns['ds']}}}DigestMethod",
+            Algorithm="http://www.w3.org/2000/09/xmldsig#sha1"
+        )
+        ET.SubElement(
+            cert_digest,
+            f"{{{self.ns['ds']}}}DigestValue"
+        ).text = "Fi3/GHSQt+Xo6xqgSkTzVn96AIM="  # Valeur factice
+        
+        # Émetteur et numéro de série
+        ET.SubElement(
+            cert,
+            f"{{{self.ns['xades']}}}IssuerSerialV2"
+        ).text = "..."  # Valeur factice
+        
+        # 4.1.3 Politique de signature
+        policy = ET.SubElement(
+            signed_signature_props,
+            f"{{{self.ns['xades']}}}SignaturePolicyIdentifier"
+        )
+        policy_id = ET.SubElement(policy, f"{{{self.ns['xades']}}}SigPolicyId")
+        
+        # Identifiant de la politique
+        sig_policy_id = ET.SubElement(policy_id, f"{{{self.ns['xades']}}}Identifier",
+                                      Qualifier="OIDasURN")
+        sig_policy_id.text = "urn:2.16.788.1.2.1"
+        
+        # Hachage de la politique
+        sig_policy_hash = ET.SubElement(
+            policy_id,
+            f"{{{self.ns['xades']}}}SigPolicyHash"
+        )
+        ET.SubElement(
+            sig_policy_hash,
+            f"{{{self.ns['ds']}}}DigestMethod",
+            Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"
+        )
+        ET.SubElement(
+            sig_policy_hash,
+            f"{{{self.ns['ds']}}}DigestValue"
+        ).text = "dJfuvjtlkeBfLBKUf142staW57x6LpSKGIfzWvohY3E="  # Valeur factice
+        
+        # 4.1.4 Rôle du signataire
+        signer_role = ET.SubElement(
+            signed_signature_props,
+            f"{{{self.ns['xades']}}}SignerRoleV2"
+        )
+        claimed_roles = ET.SubElement(signer_role, f"{{{self.ns['xades']}}}ClaimedRoles")
+        ET.SubElement(
+            claimed_roles,
+            f"{{{self.ns['xades']}}}ClaimedRole"
+        ).text = sig_data.get('role', 'Fournisseur')
+        
+        # 4.2 Propriétés des objets de données signés
+        signed_data_object_props = ET.SubElement(
+            signed_props,
+            f"{{{self.ns['xades']}}}SignedDataObjectProperties"
+        )
+        data_object_format = ET.SubElement(
+            signed_data_object_props,
+            f"{{{self.ns['xades']}}}DataObjectFormat",
+            ObjectReference=f"#r-id-{sig_id.lower()}"
+        )
+        ET.SubElement(
+            data_object_format,
+            f"{{{self.ns['xades']}}}MimeType"
+        ).text = "application/octet-stream"
+
+    def _add_line_discount(self, parent: ET.Element, discount: Dict[str, Any], currency: str) -> None:
+        """
+        Ajoute une remise à une ligne de facture avec validation des données.
+        
+        Args:
+            parent: L'élément parent (ligne de facture) auquel ajouter la remise
+            discount: Dictionnaire contenant les informations de remise avec les clés:
+                - amount: Montant de la remise (obligatoire)
+                - type_code: Code type de remise (optionnel, défaut: 'I-172' pour Remise commerciale)
+                - rate: Taux de remise en pourcentage (optionnel)
+                - description: Description textuelle de la remise (optionnel)
+            currency: Code devise ISO 4217 (ex: 'TND')
+            
+        Raises:
+            ValueError: Si les données obligatoires sont manquantes ou invalides
+        """
+        from .sections.amounts import create_amount_element
+        
+        if not isinstance(discount, dict):
+            raise ValueError("Le paramètre 'discount' doit être un dictionnaire")
+            
+        if 'amount' not in discount:
+            raise ValueError("Le montant de la remise est obligatoire (clé 'amount')")
+            
+        if not isinstance(currency, str) or len(currency) != 3:
+            raise ValueError("Le code devise doit être une chaîne de 3 caractères (ex: 'TND')")
+        
+        try:
+            # Créer l'élément de remise
+            discount_elem = ET.SubElement(parent, "Discount")
+            
+            # Montant de la remise (obligatoire)
+            amount = float(discount['amount'])
+            if amount < 0:
+                raise ValueError("Le montant de la remise ne peut pas être négatif")
+                
+            # Utilisation de la fonction du module amounts pour créer l'élément de montant
+            type_code = str(discount.get('type_code', 'I-172'))
+            amount_data = {
+                'amount': amount,
+                'currency': currency,
+                'format': 3
+            }
+            
+            # Créer l'élément de montant avec le type de code approprié
+            amount_elem = create_amount_element(discount_elem, amount_data)
+            amount_elem.set('amountTypeCode', type_code)
+            
+            # Taux de remise (optionnel)
+            if 'rate' in discount:
+                rate = float(discount['rate'])
+                if not (0 <= rate <= 100):
+                    raise ValueError("Le taux de remise doit être compris entre 0 et 100")
+                ET.SubElement(
+                    discount_elem, 
+                    "Rate"
+                ).text = self._format_amount(rate, 2)
+            
+            # Description de la remise (optionnel)
+            if 'description' in discount:
+                description = str(discount['description']).strip()
+                if description:  # Ne pas ajouter de description vide
+                    ET.SubElement(
+                        discount_elem, 
+                        "Description"
+                    ).text = description
+                    
+        except (ValueError, TypeError) as e:
+            raise ValueError(f"Format de données de remise invalide: {str(e)}")
+
+    def _add_line_tax(self, parent: ET.Element, tax_data: Dict[str, Any], currency: str) -> None:
+        """
+        Ajoute une taxe à une ligne de facture avec validation des données.
+        
+        Args:
+            parent: L'élément parent (ligne de facture) auquel ajouter la taxe
+            tax_data: Dictionnaire contenant les informations de taxe avec les clés:
+                - code: Code de la taxe (optionnel, défaut: 'I-1602' pour TVA)
+                - name: Nom de la taxe (optionnel, défaut: 'TVA')
+                - rate: Taux de taxe en pourcentage (obligatoire)
+                - taxable_amount: Montant taxable (obligatoire)
+                - amount: Montant de la taxe (obligatoire)
+            currency: Code devise ISO 4217 (ex: 'TND')
+            
+        Raises:
+            ValueError: Si les données obligatoires sont manquantes ou invalides
+        """
+        from .sections.amounts import create_tax_amount
+        from .referentials import validate_tax_type, get_tax_type_description
+        
+        if not isinstance(tax_data, dict):
+           raise ValueError("Le paramètre 'tax_data' doit être un dictionnaire")
+            
+        # Vérification des champs obligatoires
+        required_fields = ['rate', 'taxable_amount', 'amount']
+        missing_fields = [field for field in required_fields if field not in tax_data]
+        if missing_fields:
+            raise ValueError(
+                f"Champs de taxe manquants: {', '.join(missing_fields)}. "
+                "Les champs 'rate', 'taxable_amount' et 'amount' sont obligatoires."
+            )
+            
+        if not isinstance(currency, str) or len(currency) != 3:
+            raise ValueError("Le code devise doit être une chaîne de 3 caractères (ex: 'TND')")
+            
+        try:
+            # Validation des valeurs numériques
+            rate = float(tax_data['rate'])
+            taxable_amount = float(tax_data['taxable_amount'])
+            amount = float(tax_data['amount'])
+            
+            if rate < 0 or taxable_amount < 0 or amount < 0:
+                raise ValueError("Les montants et taux de taxe ne peuvent pas être négatifs")
+            
+            # Préparer les données pour create_tax_amount
+            tax_info = {
+                'code': tax_data.get('type', 'I-1602'),
+                'type': tax_data.get('name', 'TVA'),
+                'rate': rate,
+                'amount': amount,
+                'currency': currency,
+                'taxable_amount': taxable_amount
+            }
+            
+            # Vérifier si le type de taxe est valide et ajouter la description si nécessaire
+            if validate_tax_type(tax_info['code']):
+                tax_info['type'] = get_tax_type_description(tax_info['code'])
+            
+            # Utilisation de la fonction du module amounts pour créer la taxe
+            create_tax_amount(parent, tax_info)
+            
+        except (ValueError, TypeError) as e:
+            raise ValueError(f"Format de données de taxe invalide: {str(e)}")
+
+    def _format_amount(self, value: Any, decimals: int = 3) -> str:
+        """
+        Formate un montant avec le nombre de décimales spécifié.
+        
+        Args:
+            value: Valeur numérique à formater (peut être un nombre ou une chaîne)
+            decimals: Nombre de décimales à afficher (par défaut: 3)
+            
+        Returns:
+            Chaîne formatée avec le nombre de décimales spécifié
+            
+        Raises:
+            ValueError: Si la valeur ne peut pas être convertie en nombre
+            ValueError: Si le nombre de décimales est négatif
+        """
+        if not isinstance(decimals, int) or decimals < 0:
+            raise ValueError("Le nombre de décimales doit être un entier positif ou nul")
+            
+        try:
+            # Convertir en float et formater avec le nombre de décimales
+            num_value = float(value)
+            return f"{num_value:.{decimals}f}"
+        except (ValueError, TypeError) as e:
+            raise ValueError(f"Impossible de formater la valeur '{value}' comme montant: {str(e)}")
+    
+    def _format_percentage(self, value: Any) -> str:
+        """
+        Formate un pourcentage avec 2 décimales.
+        
+        Args:
+            value: Valeur à formater (peut être un nombre ou une chaîne)
+            
+        Returns:
+            Chaîne formatée avec 2 décimales
+            
+        Raises:
+            ValueError: Si la valeur ne peut pas être convertie en nombre
+        """
+        try:
+            # Convertir en float, multiplier par 100 pour le pourcentage et formater
+            percentage = float(value) * 100
+            return self._format_amount(percentage, 2)
+        except (ValueError, TypeError) as e:
+            raise ValueError(f"Impossible de formater la valeur '{value}' comme pourcentage: {str(e)}")
+    
+    def _format_xml(self, elem: ET.Element) -> str:
+        """
+        Formate le XML avec une indentation correcte et des préfixes de namespace personnalisés.
+        
+        Args:
+            elem: L'élément XML racine à formater
+            
+        Returns:
+            str: Chaîne XML formatée avec indentation et en-tête
+            
+        Raises:
+            ValueError: Si l'élément racine n'est pas valide
+            ET.ParseError: Si une erreur survient lors du parsing du XML
+        """
+        if not ET.iselement(elem):
+            raise ValueError("L'élément fourni n'est pas un élément XML valide")
+            
+        try:
+            # Enregistrer les namespaces avec les préfixes souhaités
+            for prefix, uri in self.ns.items():
+                if prefix:  # Ne pas enregistrer le namespace par défaut avec un préfixe
+                    ET.register_namespace(prefix, uri)
+            
+            # Ajouter l'attribut schemaLocation si nécessaire
+            if 'xsi' in self.ns and hasattr(self, 'schema_location'):
+                elem.set(f"{{{self.ns['xsi']}}}schemaLocation", self.schema_location)
+            
+            # Générer le XML brut
+            rough_string = ET.tostring(elem, 'utf-8')
+            
+            # Parser pour le formatage
+            try:
+                # Parse the XML and pretty print it
+                reparsed = minidom.parseString(rough_string)
+                pretty_xml = reparsed.toprettyxml(indent="  ", encoding='utf-8').decode('utf-8')
+                
+                # Remove the XML declaration added by toprettyxml
+                pretty_xml = pretty_xml[pretty_xml.find('?>') + 2:].lstrip()
+                
+                # Return with our own XML declaration
+                return '<?xml version="1.0" encoding="UTF-8"?>\n' + pretty_xml
+                
+            except Exception as e:
+                # In case of formatting error, return unformatted XML with a warning
+                self.logger.warning(f"Error formatting XML: {str(e)}")
+                return '<?xml version="1.0" encoding="UTF-8"?>\n' + rough_string.decode('utf-8')
+                
+        except Exception as e:
+            raise ET.ParseError(f"Error generating XML: {str(e)}")
+
+    def _add_line_items(self, parent: ET.Element, data: Dict[str, Any]) -> None:
+        """
+        Add the line items section to the TEIF XML using the new LinSection and LinItem classes.
+        
+        Args:
+            parent: The parent XML element
+            data: Dictionary containing line items data with the following structure:
+                {
+                    'lines': [
+                        {
+                            'item_identifier': str,  # Required
+                            'item_code': str,        # Required
+                            'description': str,      # Required
+                            'quantity': float,       # Required
+                            'unit': str,             # Required (e.g., 'PCE' for pieces)
+                            'unit_price': float,     # Required
+                            'currency': str,         # Optional, default 'TND'
+                            'taxes': [              # Optional
+                                {
+                                    'type_name': str,   # e.g., 'TVA'
+                                    'category': str,    # e.g., 'S'
+                                    'details': [
+                                        {
+                                            'amount': float,
+                                            'rate': float,
+                                            'currency': str  # Optional, default 'TND'
+                                        }
+                                    ]
+                                }
+                            ],
+                            'additional_info': [     # Optional
+                                {
+                                    'code': str,
+                                    'description': str,
+                                    'lang': str      # Optional, default 'fr'
+                                }
+                            ]
+                        }
+                    ]
+                }
+        """
+        if 'lines' not in data or not data['lines']:
+            return
+        
+        # Create a new LinSection
+        lin_section = LinSection()
+        
+        # Add each line item
+        for i, line_data in enumerate(data['lines'], 1):
+            # Create a new line item
+            line_item = LinItem(line_number=i)
+            
+            # Set basic item information
+            item_identifier = line_data.get('item_identifier', f'ITEM-{i}')
+            item_code = line_data.get('item_code', item_identifier)
+            description = line_data.get('description', '')
+            
+            line_item.set_item_info(
+                item_identifier=item_identifier,
+                item_code=item_code,
+                description=description,
+                lang=line_data.get('language', 'fr')
+            )
+            
+            # Set quantity if available
+            if 'quantity' in line_data and 'unit' in line_data:
+                line_item.set_quantity(
+                    value=line_data['quantity'],
+                    unit=line_data['unit']
+                )
+            
+            # Add line amount
+            if 'unit_price' in line_data and 'quantity' in line_data:
+                line_total = line_data['unit_price'] * line_data['quantity']
+                line_item.add_amount(
+                    amount=line_total,
+                    currency=line_data.get('currency', 'TND'),
+                    type_code='I-110'  # Line item amount
+                )
+                
+                # Add unit price as additional amount
+                line_item.add_amount(
+                    amount=line_data['unit_price'],
+                    currency=line_data.get('currency', 'TND'),
+                    type_code='I-109'  # Unit price
+                )
+            
+            # Add taxes if available
+            for tax in line_data.get('taxes', []):
+                line_item.add_tax(
+                    type_name=tax.get('type_name', 'TVA'),
+                    category=tax.get('category', 'S'),
+                    details=tax.get('details', [])
+                )
+            
+            # Add additional product information if available
+            for info in line_data.get('additional_info', []):
+                line_item.add_additional_info(
+                    code=info.get('code', ''),
+                    description=info.get('description', ''),
+                    lang=info.get('lang', 'fr')
+                )
+            
+            # Add the line item to the section
+            lin_section.add_line(line_item)
+        
+        # Convert the LinSection to XML and add it to the parent
+        lin_section.to_xml(parent)
+
+    def _add_header(self, parent: ET.Element, data: Dict[str, Any]) -> None:
+        """
+        Add the header section to the TEIF XML.
+        
+        Args:
+            parent: The parent XML element
+            data: Dictionary containing header data
+        """
+        # Add message sender identifier
+        if 'sender_identifier' in data.get('header', {}):
+            sender = ET.SubElement(parent, "MessageSenderIdentifier")
+            sender.set("type", data['header'].get('sender_type', 'I-01'))
+            sender.text = str(data['header']['sender_identifier'])
+        
+        # Add message receiver identifier
+        if 'receiver_identifier' in data.get('header', {}):
+            receiver = ET.SubElement(parent, "MessageReceiverIdentifier")
+            receiver.set("type", data['header'].get('receiver_type', 'I-01'))
+            receiver.text = str(data['header']['receiver_identifier'])
+        
+        # Add document identification
+        if 'document_number' in data.get('header', {}):
+            doc_id = ET.SubElement(parent, "DocumentIdentification")
+            ET.SubElement(doc_id, "DocumentNumber").text = str(data['header']['document_number'])
+            ET.SubElement(doc_id, "DocumentType").text = data['header'].get('document_type', 'I-11')
+        
+        # Add dates
+        if 'dates' in data.get('header', {}):
+            for date_info in data['header']['dates']:
+                date_elem = ET.SubElement(parent, "Date")
+                ET.SubElement(date_elem, "DateText", format=date_info.get('format', 'ddMMyy')).text = date_info['date']
+                ET.SubElement(date_elem, "DateType").text = date_info.get('type', 'I-31')
+        
+        # Add test indicator if provided
+        if 'test_indicator' in data.get('header', {}):
+            ET.SubElement(parent, "TestIndicator").text = str(data['header']['test_indicator'])
+        
+        # Add language code if provided
+        if 'language' in data.get('header', {}):
+            ET.SubElement(parent, "LanguageCode").text = data['header']['language']
+        
+        # Add currency code if provided
+        if 'currency' in data.get('header', {}):
+            ET.SubElement(parent, "CurrencyCode").text = data['header']['currency']
+        
+        # Add sender information
+        if 'sender' in data:
+            sender = ET.SubElement(parent, "Sender")
+            if 'identifier' in data['sender']:
+                ET.SubElement(sender, "Identifier").text = str(data['sender']['identifier'])
+            if 'name' in data['sender']:
+                ET.SubElement(sender, "Name").text = str(data['sender']['name'])
+        
+        # Add receiver information
+        if 'receiver' in data:
+            receiver = ET.SubElement(parent, "Receiver")
+            if 'identifier' in data['receiver']:
+                ET.SubElement(receiver, "Identifier").text = str(data['receiver']['identifier'])
+            if 'name' in data['receiver']:
+                ET.SubElement(receiver, "Name").text = str(data['receiver']['name'])
+        
+        # Add document information
+        if 'document' in data:
+            doc = ET.SubElement(parent, "Document")
+            if 'type' in data['document']:
+                ET.SubElement(doc, "Type").text = str(data['document']['type'])
+            if 'number' in data['document']:
+                ET.SubElement(doc, "Number").text = str(data['document']['number'])
+            if 'date' in data['document']:
+                ET.SubElement(doc, "Date").text = str(data['document']['date'])
+
+    def _add_dates(self, parent: ET.Element, dates_data: List[Dict[str, Any]]) -> None:
+        """
+        Add dates section to the TEIF XML.
+        
+        Args:
+            parent: The parent XML element
+            dates_data: List of date dictionaries with keys:
+                - type: Type of date (e.g., 'I-31' for issue date, 'I-35' for delivery date)
+                - date: The date value in the specified format
+                - format: Date format (e.g., 'ddMMyy', 'yyyyMMdd')
+        """
+        if not dates_data:
+            return
+            
+        dates_section = ET.SubElement(parent, "Dates")
+        
+        for date_info in dates_data:
+            date_elem = ET.SubElement(dates_section, "Date")
+            
+            # Add date type (e.g., 'I-31' for issue date)
+            if 'type' in date_info:
+                ET.SubElement(date_elem, "Type").text = str(date_info['type'])
+                
+            # Add date value
+            if 'date' in date_info:
+                date_value = ET.SubElement(date_elem, "Value")
+                date_value.text = str(date_info['date'])
+                
+                # Add date format if provided
+                if 'format' in date_info:
+                    date_value.set("format", date_info['format'])
+            
+            # Add time if provided
+            if 'time' in date_info:
+                time_elem = ET.SubElement(date_elem, "Time")
+                time_elem.text = str(date_info['time'])
+                
+                # Add time format if provided
+                if 'time_format' in date_info:
+                    time_elem.set("format", date_info['time_format'])
+
+    def _add_tax_totals(self, parent: ET.Element, tax_totals_data: List[Dict[str, Any]]) -> None:
+        """
+        Add tax totals section to the TEIF XML.
+        
+        Args:
+            parent: The parent XML element
+            tax_totals_data: List of tax total dictionaries
+        """
+        if not tax_totals_data:
+            return
+            
+        tax_totals = ET.SubElement(parent, "TaxTotals")
+        
+        for tax_data in tax_totals_data:
+            tax_total = ET.SubElement(tax_totals, "TaxTotal")
+            
+            if 'tax_amount' in tax_data:
+                ET.SubElement(tax_total, "TaxAmount", currencyID=tax_data.get('currency', 'TND')).text = str(tax_data['tax_amount'])
+                
+            if 'taxable_amount' in tax_data:
+                ET.SubElement(tax_total, "TaxableAmount", currencyID=tax_data.get('currency', 'TND')).text = str(tax_data['taxable_amount'])
+                
+            if 'tax_category' in tax_data:
+                tax_category = ET.SubElement(tax_total, "TaxCategory")
+                if 'id' in tax_data['tax_category']:
+                    ET.SubElement(tax_category, "ID").text = str(tax_data['tax_category']['id'])
+                if 'percent' in tax_data['tax_category']:
+                    ET.SubElement(tax_category, "Percent").text = str(tax_data['tax_category']['percent'])
+
+    def _add_legal_monetary_totals(self, parent: ET.Element, monetary_totals: Dict[str, Any]) -> None:
+        """
+        Add legal monetary totals section to the TEIF XML.
+        
+        Args:
+            parent: The parent XML element
+            monetary_totals: Dictionary containing monetary totals
+        """
+        legal_monetary_totals = ET.SubElement(parent, "LegalMonetaryTotals")
+        
+        if 'line_extension_amount' in monetary_totals:
+            ET.SubElement(
+                legal_monetary_totals, 
+                "LineExtensionAmount",
+                currencyID=monetary_totals.get('currency', 'TND')
+            ).text = str(monetary_totals['line_extension_amount'])
+            
+        if 'tax_exclusive_amount' in monetary_totals:
+            ET.SubElement(
+                legal_monetary_totals,
+                "TaxExclusiveAmount",
+                currencyID=monetary_totals.get('currency', 'TND')
+            ).text = str(monetary_totals['tax_exclusive_amount'])
+            
+        if 'tax_inclusive_amount' in monetary_totals:
+            ET.SubElement(
+                legal_monetary_totals,
+                "TaxInclusiveAmount",
+                currencyID=monetary_totals.get('currency', 'TND')
+            ).text = str(monetary_totals['tax_inclusive_amount'])
+            
+        if 'allowance_total_amount' in monetary_totals:
+            ET.SubElement(
+                legal_monetary_totals,
+                "AllowanceTotalAmount",
+                currencyID=monetary_totals.get('currency', 'TND')
+            ).text = str(monetary_totals['allowance_total_amount'])
+            
+        if 'payable_amount' in monetary_totals:
+            ET.SubElement(
+                legal_monetary_totals,
+                "PayableAmount",
+                currencyID=monetary_totals.get('currency', 'TND')
+            ).text = str(monetary_totals['payable_amount'])
+
+    def _add_partner_section(self, parent: ET.Element, partner_data: Dict[str, Any]) -> None:
+        """Add partner information (buyer/seller)"""
+        # Add partner type (BY = Buyer, SE = Seller, etc.)
+        partner_type = ET.SubElement(parent, "PartnerType")
+        partner_type.text = partner_data.get('type', 'SE')  # Default to Seller
+
+        # Add partner identification
+        if 'identifier' in partner_data:
+            identifier = ET.SubElement(parent, "Identifier")
+            identifier.set("type", partner_data.get('identifier_type', 'I-01'))
+            identifier.text = partner_data['identifier']
+
+        # Add name and address if available
+        if 'name' in partner_data:
+            ET.SubElement(parent, "Name").text = partner_data['name']
+    
+        if 'address' in partner_data:
+            address = ET.SubElement(parent, "Address")
+            addr_data = partner_data['address']
+            if 'street' in addr_data:
+                ET.SubElement(address, "Street").text = addr_data['street']
+            if 'city' in addr_data:
+                ET.SubElement(address, "City").text = addr_data['city']
+            if 'postal_code' in addr_data:
+                ET.SubElement(address, "PostalCode").text = addr_data['postal_code']
+            if 'country' in addr_data:
+                ET.SubElement(address, "Country").text = addr_data['country']
+
+    def _add_date_section(self, parent: ET.Element, date_data: Dict[str, Any]) -> None:
+        """Add date information"""
+        date_type = ET.SubElement(parent, "DateType")
+        date_type.text = date_data.get('type', 'I-31')  # Default to invoice date
+
+        date_value = ET.SubElement(parent, "DateValue")
+        date_value.text = date_data.get('date', '')
+
+        if 'format' in date_data:
+            date_format = ET.SubElement(parent, "DateFormat")
+            date_format.text = date_data['format']
+
+    def _add_invoice_amount(self, parent: ET.Element, amount_data: Dict[str, Any]) -> None:
+        """Add invoice monetary amount"""
+        amount_type = ET.SubElement(parent, "AmountType")
+        amount_type.text = amount_data.get('type', 'I-146')  # Default to invoice total amount
+
+        amount = ET.SubElement(parent, "Amount")
+        amount.set("currencyID", amount_data.get('currency', 'TND'))
+        amount.text = f"{float(amount_data.get('value', 0)):.3f}"
+
+    def _add_invoice_tax(self, parent: ET.Element, tax_data: Dict[str, Any]) -> None:
+        """Add invoice tax information"""
+        tax_type = ET.SubElement(parent, "TaxType")
+        tax_type.text = tax_data.get('type', 'I-19')  # Default to standard VAT
+
+        tax_amount = ET.SubElement(parent, "TaxAmount")
+        tax_amount.set("currencyID", tax_data.get('currency', 'TND'))
+        tax_amount.text = f"{float(tax_data.get('amount', 0)):.3f}"
+
+        if 'rate' in tax_data:
+            tax_rate = ET.SubElement(parent, "TaxRate")
+            tax_rate.text = f"{float(tax_data['rate']):.2f}%"
+
+    def _add_signature(self, parent: ET.Element, signature_data: Dict[str, Any]) -> None:
+        """
+        Add signature section to the TEIF XML.
+        
+        Args:
+            parent: The parent XML element
+            signature_data: Dictionary containing signature information
+        """
+        signature = ET.SubElement(parent, "Signature")
+        
+        if 'id' in signature_data:
+            signature.set("ID", str(signature_data['id']))
+            
+        if 'signatory_party' in signature_data:
+            signatory_party = ET.SubElement(signature, "SignatoryParty")
+            if 'party_identification' in signature_data['signatory_party']:
+                party_identification = ET.SubElement(signatory_party, "PartyIdentification")
+                ET.SubElement(party_identification, "ID").text = str(
+                    signature_data['signatory_party']['party_identification']
+                )
+                
+        if 'digital_signature_attachment' in signature_data:
+            attachment = ET.SubElement(signature, "DigitalSignatureAttachment")
+            external_reference = ET.SubElement(attachment, "ExternalReference")
+            if 'uri' in signature_data['digital_signature_attachment']:
+                external_reference.set("URI", str(signature_data['digital_signature_attachment']['uri']))
+
+    def _add_invoice_totals(self, parent: ET.Element, totals_data: Dict[str, Any]) -> None:
+        """
+        Add invoice totals section to the TEIF XML.
+        
+        Args:
+            parent: The parent XML element
+            totals_data: Dictionary containing invoice totals
+        """
+        totals = ET.SubElement(parent, "InvoiceTotals")
+        
+        # Add currency code if provided
+        currency = totals_data.get('currency', 'TND')
+        
+        # Add line extension amount (total amount before tax)
+        if 'line_extension_amount' in totals_data:
+            ET.SubElement(
+                totals,
+                "LineExtensionAmount",
+                currencyID=currency
+            ).text = str(totals_data['line_extension_amount'])
+        
+        # Add tax exclusive amount
+        if 'tax_exclusive_amount' in totals_data:
+            ET.SubElement(
+                totals,
+                "TaxExclusiveAmount",
+                currencyID=currency
+            ).text = str(totals_data['tax_exclusive_amount'])
+        
+        # Add tax inclusive amount
+        if 'tax_inclusive_amount' in totals_data:
+            ET.SubElement(
+                totals,
+                "TaxInclusiveAmount",
+                currencyID=currency
+            ).text = str(totals_data['tax_inclusive_amount'])
+        
+        # Add allowance total amount if any discounts or allowances
+        if 'allowance_total_amount' in totals_data:
+            ET.SubElement(
+                totals,
+                "AllowanceTotalAmount",
+                currencyID=currency
+            ).text = str(totals_data['allowance_total_amount'])
+        
+        # Add charge total amount if any additional charges
+        if 'charge_total_amount' in totals_data:
+            ET.SubElement(
+                totals,
+                "ChargeTotalAmount",
+                currencyID=currency
+            ).text = str(totals_data['charge_total_amount'])
+        
+        # Add prepaid amount if any prepayments
+        if 'prepaid_amount' in totals_data:
+            ET.SubElement(
+                totals,
+                "PrepaidAmount",
+                currencyID=currency
+            ).text = str(totals_data['prepaid_amount'])
+        
+        # Add payable amount (final amount to be paid)
+        if 'payable_amount' in totals_data:
+            ET.SubElement(
+                totals,
+                "PayableAmount",
+                currencyID=currency
+            ).text = str(totals_data['payable_amount'])
+
+    def _format_xml(self, elem: ET.Element) -> str:
+        """Format XML with proper indentation and encoding"""
+        # Convert to string
+        rough_string = ET.tostring(elem, 'utf-8')
+    
+        # Parse and pretty print
+        try:
+            # Parse the XML and pretty print it
+            reparsed = minidom.parseString(rough_string)
+            pretty_xml = reparsed.toprettyxml(indent="  ", encoding='utf-8').decode('utf-8')
+        
+            # Remove the XML declaration added by toprettyxml
+            pretty_xml = pretty_xml[pretty_xml.find('?>') + 2:].lstrip()
+        
+            # Remove extra newlines and fix indentation
+            pretty_xml = re.sub(r'>\s+<', '><', pretty_xml)  # Remove whitespace between tags
+            pretty_xml = re.sub(r'(\S)\n\s*<', r'\1<', pretty_xml)  # Fix line breaks
+            pretty_xml = re.sub(r'(\S)\n\s*', r'\1', pretty_xml)  # Remove extra newlines
+        
+            return '<?xml version="1.0" encoding="UTF-8"?>\n' + pretty_xml
+        
+        except Exception as e:
+            self.logger.warning(f"Error formatting XML: {str(e)}")
+        return '<?xml version="1.0" encoding="UTF-8"?>\n' + rough_string.decode('utf-8')
+    
+
+# Exemple d'utilisation
+if __name__ == "__main__":
+    # Créer une instance du générateur
+    generator = TEIFGenerator()
+    
+    # Générer le XML avec les données de la facture
+    # Remplacez ceci par votre propre dictionnaire de données
+    invoice_data = {
+        # Structure de données de la facture
+    }
+    
+    try:
+        # Génération du XML
+        xml_output = generator.generate_teif_xml(invoice_data)
+        
+        # Sauvegarde dans un fichier
+        output_file = "facture_teif.xml"
+        with open(output_file, "w", encoding="utf-8") as f:
+            f.write(xml_output)
+        
+        print(f"Facture TEIF générée avec succès : {output_file}")
+        
+    except Exception as e:
+        print(f"Erreur lors de la génération de la facture : {str(e)}")
+        raise

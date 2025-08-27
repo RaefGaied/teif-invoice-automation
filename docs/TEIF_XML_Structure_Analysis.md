@@ -1,328 +1,309 @@
-# TEIF XML Structure - Comprehensive Analysis
+# TEIF XML Structure - Comprehensive Analysis (v1.8.8)
 
 ## Overview
-This document provides a complete analysis of the Tunisian Electronic Invoice Format (TEIF) XML structure based on the official TTN standard and sample files.
+This document provides a complete analysis of the Tunisian Electronic Invoice Format (TEIF) XML structure based on the official TTN standard version 1.8.8.
 
-## 1. Root Element Structure
+## 1. Document Structure
 
+### 1.1 Root Element
 ```xml
-<TEIFInvoice xmlns="http://www.tradenet.com.tn/teif/invoice/1.0" 
-             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
-             xsi:schemaLocation="http://www.tradenet.com.tn/teif/invoice/1.0 teif_invoice_schema.xsd">
+<TEIF 
+    xmlns="http://www.tradenet.com.tn/teif/invoice/1.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.tradenet.com.tn/teif/invoice/1.0 teif_invoice_schema.xsd"
+    version="1.8.8"
+    controlingAgency="TTN">
 ```
 
-**Requirements:**
-- Namespace: `http://www.tradenet.com.tn/teif/invoice/1.0`
-- Schema validation required
-- Version attribute on InvoiceHeader
+**Attributes:**
+- `version`: "1.8.8" (MANDATORY)
+- `controlingAgency`: "TTN" (MANDATORY)
+- `xmlns`: TEIF namespace (MANDATORY)
+- `xmlns:xsi`: XML Schema Instance (MANDATORY)
+- `xsi:schemaLocation`: XSD schema location (MANDATORY)
 
-## 2. Element Sequence (MANDATORY ORDER)
-
-### 2.1 InvoiceHeader (Rank 1 - MANDATORY)
+### 1.2 Document Header
 ```xml
-<InvoiceHeader version="1.0">
-    <MessageId>TTN-{INVOICE_NUMBER}-{TIMESTAMP}</MessageId>
-</InvoiceHeader>
+<DocumentHeader>
+    <DocumentIdentifier>FACT-2025-001</DocumentIdentifier>
+    <DocumentType code="I-11">Facture</DocumentType>
+    <CreationDateTime>2025-08-05T12:00:00</CreationDateTime>
+</DocumentHeader>
 ```
 
-**Fields:**
-- `version`: Always "1.0"
-- `MessageId`: Format: TTN-{InvoiceNumber}-{YYYYMMDDHHmmss}
+**Elements:**
+- `DocumentIdentifier`: Unique invoice number (MANDATORY)
+- `DocumentType`: 
+  - `code`: "I-11" for invoice (MANDATORY)
+  - Text: "Facture" (MANDATORY)
+- `CreationDateTime`: ISO 8601 format (MANDATORY)
 
-**Edge Cases:**
-- MessageId must be unique
-- Timestamp must be invoice generation time
-- Maximum length: 50 characters
+## 2. Partner Information (MANDATORY)
 
-### 2.2 Bgm (Document Message - Rank 2 - MANDATORY)
+### 2.1 PartnerSection
 ```xml
-<Bgm>
-    <DocumentTypeCode>380</DocumentTypeCode>
-    <DocumentNumber>INVOICE-001</DocumentNumber>
-</Bgm>
-```
-
-**Fields:**
-- `DocumentTypeCode`: Always "380" (Commercial Invoice)
-- `DocumentNumber`: Invoice number from PDF
-
-**Edge Cases:**
-- DocumentNumber must match PDF invoice number exactly
-- No special characters except hyphens and underscores
-- Maximum length: 35 characters
-
-### 2.3 Dtm (Date/Time - Rank 3 - MANDATORY)
-```xml
-<Dtm>
-    <DateTimeQualifier>137</DateTimeQualifier>
-    <DateTime>2025-07-30</DateTime>
-</Dtm>
-```
-
-**Fields:**
-- `DateTimeQualifier`: "137" (Document date)
-- `DateTime`: Format YYYY-MM-DD
-
-**Edge Cases:**
-- Date must be valid
-- Cannot be future date
-- Must match PDF invoice date
-
-### 2.4 PartnerSection - Supplier (Rank 4 - MANDATORY)
-```xml
-<PartnerSection role="supplier">
-    <Nad>
-        <PartyQualifier>SU</PartyQualifier>
-        <PartyId>1234567ABC</PartyId>
-        <PartyName>Entreprise Exemple</PartyName>
-        <PartyAddress>Tunis</PartyAddress>
-    </Nad>
+<PartnerSection>
+    <!-- Supplier (Fournisseur) -->
+    <Partner functionCode="I-62">
+        <Name nameType="Qualification">NOM DU FOURNISSEUR</Name>
+        <TaxId>12345678A</TaxId>
+        <Address>
+            <Street>RUE PRINCIPALE</Street>
+            <City>TUNIS</City>
+            <PostalCode>1000</PostalCode>
+            <Country>TN</Country>
+        </Address>
+        <Contact>
+            <Name>CONTACT COMMERCIAL</Name>
+            <Phone>+216 XX XXX XXX</Phone>
+            <Email>contact@fournisseur.tn</Email>
+        </Contact>
+    </Partner>
+    
+    <!-- Buyer (Client) -->
+    <Partner functionCode="I-64">
+        <Name nameType="Qualification">NOM DU CLIENT</Name>
+        <TaxId>98765432B</TaxId>
+        <Address>
+            <Street>AVENUE HABIB BOURGUIBA</Street>
+            <City>SOUSSE</City>
+            <PostalCode>4000</PostalCode>
+            <Country>TN</Country>
+        </Address>
+    </Partner>
 </PartnerSection>
 ```
 
-**Fields:**
-- `role`: "supplier"
-- `PartyQualifier`: "SU" (Supplier)
-- `PartyId`: Company tax ID/identifier
-- `PartyName`: Company name
-- `PartyAddress`: Full address
+**Function Codes:**
+- `I-62`: Supplier (Fournisseur)
+- `I-64`: Buyer (Client)
 
-**Edge Cases:**
-- PartyId must be valid Tunisian tax ID format
-- PartyName cannot be empty
-- Address should include city and postal code if available
+## 3. Invoice Body (MANDATORY)
 
-### 2.5 PartnerSection - Buyer (Rank 5 - MANDATORY)
+### 3.1 Invoice Header
 ```xml
-<PartnerSection role="buyer">
-    <Nad>
-        <PartyQualifier>BY</PartyQualifier>
-        <PartyId>9876543XYZ</PartyId>
-        <PartyName>Client Exemple</PartyName>
-        <PartyAddress>Sfax</PartyAddress>
-    </Nad>
-</PartnerSection>
-```
-
-**Fields:**
-- `role`: "buyer"
-- `PartyQualifier`: "BY" (Buyer)
-- Similar structure to supplier
-
-### 2.6 PytSection (Payment Terms - CONDITIONAL)
-```xml
-<PytSection>
-    <Pyt>
-        <PaymentTermsTypeCode>1</PaymentTermsTypeCode>
-        <PaymentTermsDescription>Net 30 jours</PaymentTermsDescription>
-    </Pyt>
-</PytSection>
-```
-
-**Fields:**
-- `PaymentTermsTypeCode`: Payment terms code
-- `PaymentTermsDescription`: Human-readable description
-
-**Edge Cases:**
-- Optional section
-- Common codes: 1 (Net), 2 (Cash), 3 (End of month)
-
-### 2.7 LinSection (Line Items - MANDATORY)
-```xml
-<LinSection lineNumber="1">
-    <LinImd>
-        <ItemDescriptionType>F</ItemDescriptionType>
-        <ItemDescription>Service exemple</ItemDescription>
-    </LinImd>
-    <LinQty>
-        <QuantityQualifier>47</QuantityQualifier>
-        <Quantity>1</Quantity>
-        <MeasureUnitQualifier>PCE</MeasureUnitQualifier>
-    </LinQty>
-    <LinDtm>
+<InvoiceBody>
+    <Bgm>
+        <DocumentNameCode>380</DocumentNameCode>
+        <DocumentNumber>FACT-2025-001</DocumentNumber>
+    </Bgm>
+    <Dtm>
         <DateTimeQualifier>137</DateTimeQualifier>
-        <DateTime>2025-07-30</DateTime>
-    </LinDtm>
-    <LinTax>
-        <DutyTaxFeeTypeCode>VAT</DutyTaxFeeTypeCode>
-        <DutyTaxFeeRate>18.00</DutyTaxFeeRate>
-        <TaxPaymentDate>
-            <DateTimeQualifier>140</DateTimeQualifier>
-            <DateTime>2025-07-30</DateTime>
-        </TaxPaymentDate>
-    </LinTax>
-    <LinMoa>
-        <MonetaryAmountTypeQualifier>203</MonetaryAmountTypeQualifier>
-        <MonetaryAmount>84.75</MonetaryAmount>
-        <CurrencyCode>TND</CurrencyCode>
-        <Rff>
-            <ReferenceQualifier>LI</ReferenceQualifier>
-            <ReferenceNumber>LINE-1</ReferenceNumber>
-        </Rff>
-    </LinMoa>
-</LinSection>
+        <DateTime>2025-08-05</DateTime>
+    </Dtm>
+    <PaymentTerms>
+        <TermsType>1</TermsType>
+        <TermsDescription>Paiement à 30 jours</TermsDescription>
+    </PaymentTerms>
 ```
 
-**Fields:**
-- `lineNumber`: Sequential line number
-- `ItemDescriptionType`: "F" (Free text)
-- `ItemDescription`: Product/service description
-- `QuantityQualifier`: "47" (Invoiced quantity)
-- `Quantity`: Numeric quantity
-- `MeasureUnitQualifier`: Unit code (PCE, KGM, etc.)
-- `DutyTaxFeeTypeCode`: "VAT" or "TVA"
-- `DutyTaxFeeRate`: Tax percentage
-- `MonetaryAmountTypeQualifier`: "203" (Line amount)
-- `MonetaryAmount`: Line total amount
-- `CurrencyCode`: "TND"
-
-**Edge Cases:**
-- Multiple LinSection elements for multiple lines
-- Quantity must be positive
-- Tax rate must match Tunisian VAT rates (0%, 7%, 13%, 19%)
-- Amount calculations must be precise
-
-### 2.8 InvoiceMoa (Invoice Monetary Amounts - MANDATORY)
+### 3.2 Line Items
 ```xml
-<InvoiceMoa>
-    <Moa>
-        <MonetaryAmountTypeQualifier>86</MonetaryAmountTypeQualifier>
-        <MonetaryAmount>100.00</MonetaryAmount>
-        <CurrencyCode>TND</CurrencyCode>
-    </Moa>
-</InvoiceMoa>
+    <Line lineNumber="1">
+        <Item>
+            <Description>Produit ou service</Description>
+            <BuyerItemIdentification>
+                <ID>REF-001</ID>
+            </BuyerItemIdentification>
+        </Item>
+        <Quantity unit="PCE">1.000</Quantity>
+        <Price>
+            <Amount amountTypeCode="I-183" currencyIdentifier="TND">1000.000</Amount>
+        </Price>
+        <LineTotal>
+            <Amount amountTypeCode="I-171" currencyIdentifier="TND">1000.000</Amount>
+        </LineTotal>
+    </Line>
 ```
 
-**Fields:**
-- `MonetaryAmountTypeQualifier`: Amount type code
-  - "86": Total invoice amount excluding VAT
-  - "125": Total invoice amount including VAT
-  - "176": Total amount due
-- `MonetaryAmount`: Numeric amount (3 decimal places)
-- `CurrencyCode`: "TND"
+**Amount Type Codes:**
+- `I-183`: Unit price
+- `I-171`: Line total amount
 
-**Edge Cases:**
-- Multiple Moa elements for different amount types
-- Amounts must be consistent with line totals
-- Precision: 3 decimal places
-
-### 2.9 InvoiceTax (Tax Information - MANDATORY)
+### 3.3 Invoice Summary
 ```xml
-<InvoiceTax>
-    <Tax>
-        <DutyTaxFeeTypeCode>TVA</DutyTaxFeeTypeCode>
-        <DutyTaxFeeRate>18.00</DutyTaxFeeRate>
-        <Moa>
-            <MonetaryAmountTypeQualifier>124</MonetaryAmountTypeQualifier>
-            <MonetaryAmount>15.25</MonetaryAmount>
-            <CurrencyCode>TND</CurrencyCode>
-        </Moa>
-    </Tax>
-</InvoiceTax>
+    <InvoiceMoa>
+        <Amount amountTypeCode="I-176" currencyIdentifier="TND">1000.000</Amount>
+        <Amount amountTypeCode="I-180" currencyIdentifier="TND">1190.000</Amount>
+        <Amount amountTypeCode="I-181" currencyIdentifier="TND">190.000</Amount>
+    </InvoiceMoa>
+    
+    <InvoiceTax>
+        <TaxTypeName code="I-1602">TVA</TaxTypeName>
+        <TaxRate>19.0</TaxRate>
+        <TaxableAmount>1000.000</TaxableAmount>
+        <TaxAmount>190.000</TaxAmount>
+    </InvoiceTax>
+</InvoiceBody>
 ```
 
-**Fields:**
-- `DutyTaxFeeTypeCode`: "TVA" or "VAT"
-- `DutyTaxFeeRate`: Tax percentage
-- `MonetaryAmountTypeQualifier`: "124" (Tax amount)
-- `MonetaryAmount`: Tax amount
-- `CurrencyCode`: "TND"
+**Amount Type Codes:**
+- `I-176`: Total amount without tax
+- `I-180`: Total amount with tax
+- `I-181`: Total tax amount
 
-**Edge Cases:**
-- Multiple Tax elements for different tax rates
-- Tax amounts must match calculations
-- Common Tunisian VAT rates: 0%, 7%, 13%, 19%
+## 4. Additional Information (CONDITIONAL)
 
-### 2.10 RefTtnVal (TTN Reference - MANDATORY)
 ```xml
-<RefTtnVal>
+<AdditionalInformation>
+    <Note>Conditions de paiement: Paiement à 30 jours fin de mois</Note>
     <Reference>
-        <ReferenceQualifier>AAK</ReferenceQualifier>
-        <ReferenceNumber>SAMPLE-REF-001</ReferenceNumber>
-        <ReferenceDate>
-            <DateTimeQualifier>171</DateTimeQualifier>
-            <DateTime>2025-07-30</DateTime>
-        </ReferenceDate>
+        <ReferenceType>ON</ReferenceType>
+        <ReferenceNumber>CMD-2025-001</ReferenceNumber>
     </Reference>
-</RefTtnVal>
+</AdditionalInformation>
 ```
 
-**Fields:**
-- `ReferenceQualifier`: "AAK" (Reference number)
-- `ReferenceNumber`: Unique reference
-- `DateTimeQualifier`: "171" (Reference date)
-- `DateTime`: Reference date
+## 5. Signature (CONDITIONAL)
 
-### 2.11 Signature (Digital Signature - MANDATORY)
 ```xml
-<Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
-    <ds:SignedInfo>
-        <ds:CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>
-        <ds:SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"/>
-    </ds:SignedInfo>
-    <!-- Additional signature elements -->
+<Signature>
+    <SignatoryParty>
+        <Name>NOM DU SIGNATAIRE</Name>
+        <Title>Directeur Commercial</Title>
+    </SignatoryParty>
+    <DigitalSignature>
+        <!-- Signature électronique XAdES -->
+    </DigitalSignature>
 </Signature>
 ```
 
-## 3. Data Validation Rules
+## Validation Rules
 
-### 3.1 Mandatory Fields
-- All elements marked as MANDATORY must be present
-- Cannot be empty or null
+### Mandatory Fields
+1. Root element with all required attributes
+2. Document header with unique identifier
+3. Supplier and buyer information
+4. At least one line item
+5. Invoice totals (with and without tax)
+6. Tax information
 
-### 3.2 Format Validation
-- Dates: YYYY-MM-DD format
-- Amounts: Numeric with up to 3 decimal places
-- Currency: Always "TND"
-- Tax rates: Valid Tunisian VAT rates
+### Data Types
+- **Amounts**: Decimal with 3 decimal places (e.g., 1000.000)
+- **Dates**: ISO 8601 format (YYYY-MM-DD)
+- **Tax Rates**: Decimal with 1 decimal place (e.g., 19.0)
+- **Currencies**: TND (Tunisian Dinar)
 
-### 3.3 Business Rules
-- Total amounts must equal sum of line amounts
-- Tax amounts must be calculated correctly
-- Invoice date cannot be in the future
-- Party IDs must be valid Tunisian format
+### Business Rules
+1. Line totals must equal quantity × unit price
+2. Tax amounts must equal taxable amount × (tax rate / 100)
+3. Document numbers must be unique
+4. All monetary amounts must be in TND
 
-### 3.4 Edge Cases to Handle
-- Missing PDF data → Use default values
-- Invalid amounts → Validation and correction
-- Multiple tax rates → Separate Tax elements
-- Long descriptions → Truncate to field limits
-- Special characters → Escape or remove
-- Empty line items → Skip or use defaults
+## Example Complete Structure
 
-## 4. Common Error Scenarios
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<TEIF 
+    xmlns="http://www.tradenet.com.tn/teif/invoice/1.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.tradenet.com.tn/teif/invoice/1.0 teif_invoice_schema.xsd"
+    version="1.8.8"
+    controlingAgency="TTN">
+    
+    <DocumentHeader>
+        <DocumentIdentifier>FACT-2025-001</DocumentIdentifier>
+        <DocumentType code="I-11">Facture</DocumentType>
+        <CreationDateTime>2025-08-05T12:00:00</CreationDateTime>
+    </DocumentHeader>
+    
+    <!-- Partner and Invoice Body sections as shown above -->
+    
+</TEIF>
+```
 
-### 4.1 Data Extraction Issues
-- Company names extracted as addresses
-- Amounts showing as 0.000
-- Invoice numbers as fragments ("tre")
-- Missing tax information
+## Version History
 
-### 4.2 XML Validation Issues
-- Incorrect element order
-- Missing mandatory fields
-- Invalid data formats
-- Namespace errors
+### v1.8.8 (Current)
+- Added support for digital signatures
+- Updated tax calculation rules
+- Enhanced validation rules
 
-### 4.3 Business Logic Issues
-- Amount calculations don't match
-- Tax rates not recognized
-- Invalid party identifiers
-- Date inconsistencies
+### v1.7.0
+- Initial public release
+- Basic invoice structure
+- Support for standard tax calculations
 
-## 5. Implementation Checklist
+## References
 
-- [ ] Root element with correct namespace
-- [ ] InvoiceHeader with unique MessageId
-- [ ] Bgm with correct document type
-- [ ] Dtm with valid date
-- [ ] Both PartnerSection elements
-- [ ] LinSection for each invoice line
-- [ ] InvoiceMoa with all amount types
-- [ ] InvoiceTax with correct calculations
-- [ ] RefTtnVal with unique reference
-- [ ] Signature section (can be placeholder)
-- [ ] Data validation for all fields
-- [ ] Error handling for missing data
-- [ ] Business rule validation
-- [ ] XML schema validation
+1. [TTN TEIF 1.8.8 Specification](https://www.tradenet.tn/teif/specs)
+2. [Tunisian Tax Authority Requirements](https://www.impots.finances.gov.tn)
+3. [UN/CEFACT XML Naming and Design Rules](https://www.unece.org/cefact/)
+
+
+
+
+
+""" 
+   def _add_partner_details(self, parent: ET.Element, partner_data: Dict[str, Any], function_code: str):
+     Ajoute les détails d'un partenaire (vendeur ou acheteur).
+     partner = ET.SubElement(
+        parent,
+        "PartnerDetails",
+        functionCode=function_code
+     )
+    
+     nad = ET.SubElement(partner, "Nad")
+    
+     # Identifiant du partenaire
+     ET.SubElement(
+        nad,
+        "PartnerIdentifier",
+        type=partner_data.get('id_type', 'I-01')
+    ).text = partner_data.get('id', '')
+    
+     # Nom du partenaire
+     ET.SubElement(
+        nad,
+        "PartnerName",
+        nameType="Qualification"
+     ).text = partner_data.get('name', '')
+    
+     # Adresse
+     address = ET.SubElement(
+        nad,
+        "PartnerAdresses",
+        lang=partner_data.get('language', 'fr')
+     )
+    
+     # Détails de l'adresse
+     ET.SubElement(
+        address,
+        "Street"
+    ).text = partner_data.get('address', {}).get('street', '')
+    
+     ET.SubElement(
+        address,
+        "CityName"
+    ).text = partner_data.get('address', {}).get('city', '')
+    
+     ET.SubElement(
+        address,
+        "PostalCode"
+    ).text = partner_data.get('address', {}).get('postal_code', '')
+    
+     ET.SubElement(
+        address,
+        "Country",
+        codeList="ISO_3166-1"
+    ).text = partner_data.get('address', {}).get('country', 'TN')
+     """
+
+     
+""" def _add_partner_section(self, parent: ET.Element, data: Dict[str, Any]):
+    Ajoute la section des partenaires (vendeur et acheteur).
+      partner_section = ET.SubElement(parent, "PartnerSection")
+    
+      # Détails du vendeur
+      self._add_partner_details(
+        partner_section,
+        data.get('seller', {}),
+        function_code="I-62"  # Code pour le vendeur
+    )
+    
+      # Détails de l'acheteur
+      self._add_partner_details(
+        partner_section,
+        data.get('buyer', {}),
+        function_code="I-64"  # Code pour l'acheteur
+    )"""

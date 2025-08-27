@@ -1,19 +1,91 @@
 # PDF to TEIF Converter
 
-Convertisseur automatique de factures PDF vers le format TEIF (Tunisian Electronic Invoice Format) conforme aux standards TTN.
+Convertisseur automatique de factures PDF vers le format TEIF (Tunisian Electronic Invoice Format) conforme aux standards TTN (Tunisie TradeNet) version 1.8.8.
 
 ## Description
 
-Ce projet Python extrait automatiquement les données de factures depuis des fichiers PDF et les convertit en format XML TEIF conforme au standard tunisien d'échange électronique de factures.
+Ce projet Python extrait automatiquement les données de factures depuis des fichiers PDF et les convertit en format XML TEIF conforme au standard tunisien d'échange électronique de factures (version 1.8.8).
 
 ### Fonctionnalités principales
 
-- **Extraction automatique** : Analyse le contenu des PDFs pour extraire les données de facture
-- **Conformité TEIF** : Génère du XML strictement conforme au standard TTN
-- **Pas de recalculs** : Utilise les montants et taxes exactement comme trouvés dans le PDF
+- **Extraction intelligente** : Analyse avancée du contenu des PDFs pour extraire les données de facture
+- **Conformité TEIF 1.8.8** : Génère du XML strictement conforme au standard TTN
+- **Préservation des données** : Utilise les montants et taxes exactement comme trouvés dans le PDF, sans recalcul
 - **Support multi-format** : Fonctionne avec différents formats de factures PDF
 - **Architecture modulaire** : Code organisé en modules clairs et maintenables
-- **Interface simple** : Ligne de commande facile à utiliser
+- **Validation intégrée** : Vérification de la conformité du XML généré
+- **Génération de signatures** : Support pour les signatures XAdES (optionnel)
+
+## Structure TEIF XML
+
+Le générateur produit des fichiers XML conformes à la structure TEIF 1.8.8 avec les éléments suivants :
+
+```xml
+<TEIF xmlns="http://www.tradenet.com.tn/teif/invoice/1.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.tradenet.com.tn/teif/invoice/1.0 teif_invoice_schema.xsd"
+      version="1.8.8"
+      controlingAgency="TTN">
+  
+  <!-- En-tête de la facture -->
+  <DocumentIdentifier>FACT-12345</DocumentIdentifier>
+  <DocumentType code="I-11">Facture</DocumentType>
+  
+  <!-- Section des partenaires -->
+  <PartnerSection>
+    <!-- Fournisseur -->
+    <Partner functionCode="I-62">
+      <Name nameType="Qualification">Nom du fournisseur</Name>
+      <TaxId>12345678A</TaxId>
+      <!-- Autres informations du fournisseur -->
+    </Partner>
+    
+    <!-- Client -->
+    <Partner functionCode="I-64">
+      <Name nameType="Qualification">Nom du client</Name>
+      <TaxId>87654321B</TaxId>
+      <!-- Autres informations du client -->
+    </Partner>
+  </PartnerSection>
+  
+  <!-- Corps de la facture -->
+  <InvoiceBody>
+    <!-- Lignes de facture -->
+    <Line>
+      <LineNumber>1</LineNumber>
+      <Item>
+        <Description>Description de l'article</Description>
+      </Item>
+      <Quantity unit="PCE">1.0</Quantity>
+      <Price>
+        <Amount amountTypeCode="I-183" currencyIdentifier="TND">100.000</Amount>
+      </Price>
+      <LineTotal>
+        <Amount amountTypeCode="I-171" currencyIdentifier="TND">100.000</Amount>
+      </LineTotal>
+    </Line>
+    
+    <!-- Totaux -->
+    <InvoiceMoa>
+      <Amount amountTypeCode="I-180" currencyIdentifier="TND">119.000</Amount>
+      <Amount amountTypeCode="I-176" currencyIdentifier="TND">100.000</Amount>
+      <Amount amountTypeCode="I-181" currencyIdentifier="TND">19.000</Amount>
+    </InvoiceMoa>
+    
+    <!-- Taxes -->
+    <InvoiceTax>
+      <TaxTypeName code="I-1602">TVA</TaxTypeName>
+      <TaxRate>19.0</TaxRate>
+      <TaxableAmount>100.000</TaxableAmount>
+      <TaxAmount>19.000</TaxAmount>
+    </InvoiceTax>
+  </InvoiceBody>
+  
+  <!-- Signature électronique -->
+  <Signature>...</Signature>
+  
+</TEIF>
+```
 
 ## Installation
 
@@ -28,10 +100,12 @@ Ce projet Python extrait automatiquement les données de factures depuis des fic
 pip install -r requirements.txt
 ```
 
-### Dépendances
+### Dépendances principales
 
-- `pdfplumber` : Extraction de texte depuis les PDFs (recommandé)
+- `pdfplumber` : Extraction de texte depuis les PDFs
 - `PyPDF2` : Fallback pour l'extraction PDF
+- `lxml` : Génération et validation XML
+- `signxml` : Signature XAdES (optionnel)
 
 ## Utilisation
 
@@ -53,10 +127,10 @@ python main.py facture.pdf -o ./output
 python main.py facture.pdf --preview
 ```
 
-### Générer avec des données d'exemple
+### Tester avec des données d'exemple
 
 ```bash
-python main.py --sample
+python test_teif_generator.py tests/sample_invoice.pdf
 ```
 
 ### Aide
@@ -70,201 +144,68 @@ python main.py --help
 ```
 TTN/
 ├── main.py                        # Point d'entrée principal
+├── test_teif_generator.py         # Script de test du générateur
 ├── requirements.txt               # Dépendances
 ├── README.md                      # Documentation
-├── src/                           # Code source modulaire
+├── docs/                          # Documentation technique
+│   └── TEIF_XML_Structure_Analysis.md  # Analyse de la structure TEIF
+├── src/                           # Code source
 │   ├── __init__.py
 │   ├── extractors/                # Modules d'extraction
 │   │   ├── __init__.py
-│   │   └── pdf_extractor.py       # Extraction depuis PDF
+│   │   ├── base_extractor.py      # Classe de base pour l'extraction
+│   │   ├── pdf_extractor.py       # Extraction depuis PDF
+│   │   └── amount_validator.py    # Validation des montants
 │   ├── teif/                      # Génération TEIF
 │   │   ├── __init__.py
 │   │   └── generator.py           # Générateur XML TEIF
-│   ├── utils/                     # Utilitaires
-│   │   ├── __init__.py
-│   │   └── helpers.py             # Fonctions d'aide
 │   └── cli/                       # Interface ligne de commande
 │       ├── __init__.py
-│       └── main.py                # CLI principal
+│       └── main.py                # Gestion des arguments CLI
 ├── public/                        # Fichiers de sortie
-│   └── teif-invoices/            # XMLs TEIF générés
-└── legacy/                        # Anciennes versions
-    ├── transform_invoice.py       # Version complète (legacy)
-    └── transform_invoice_simple.py # Version simplifiée (legacy)
+│   └── teif-invoices/             # XMLs TEIF générés
+└── tests/                         # Tests
+    └── sample_invoice.pdf         # Exemple de facture pour les tests
 ```
 
-## Architecture modulaire
+## Architecture technique
 
-### Modules principaux
+### Extraction des données
 
-- **`extractors/`** : Extraction de données depuis différents formats
-  - `PDFExtractor` : Extraction depuis fichiers PDF
+Le module `extractors` est responsable de l'extraction des données depuis les fichiers PDF. Il utilise une approche hybride :
 
-- **`teif/`** : Génération XML conforme au standard TEIF
-  - `TEIFGenerator` : Générateur XML avec tous les éléments obligatoires
+1. Extraction du texte brut avec `pdfplumber`
+2. Analyse syntaxique pour identifier les champs clés
+3. Validation et normalisation des données extraites
 
-- **`utils/`** : Utilitaires et fonctions d'aide
-  - Validation de fichiers, formatage, helpers divers
+### Génération TEIF
 
-- **`cli/`** : Interface en ligne de commande
-  - `PDFToTEIFConverter` : Classe principale de conversion
-  - Interface utilisateur conviviale
+Le module `teif` gère la génération du XML conforme au standard TEIF 1.8.8 :
 
-### Avantages de cette structure
+- Structure XML validée par schéma XSD
+- Support des éléments obligatoires et conditionnels
+- Gestion des formats de données spécifiques (dates, montants, etc.)
 
-- **Maintenabilité** : Code organisé en modules spécialisés
-- **Extensibilité** : Facile d'ajouter de nouveaux extracteurs ou formats
-- **Testabilité** : Chaque module peut être testé indépendamment
-- **Réutilisabilité** : Les modules peuvent être utilisés dans d'autres projets
+## Contribution
 
-## Format de sortie
+Les contributions sont les bienvenues ! Pour contribuer :
 
-Le script génère des fichiers XML conformes au standard TEIF avec tous les éléments obligatoires :
-
-- **InvoiceHeader** : En-tête avec ID unique TTN
-- **Bgm** : Début de message avec type et numéro de facture
-- **Dtm** : Date/période
-- **PartnerSection** : Détails des partenaires (fournisseur/client)
-- **LinSection** : Lignes d'articles avec quantités, prix, taxes
-- **InvoiceMoa** : Montants de facture
-- **InvoiceTax** : Taxes de facture
-- **RefTtnVal** : Référence de validation TTN
-- **Signature** : Signature électronique (placeholder)
-
-## Exemples
-
-### Conversion simple
-
-```bash
-$ python main.py facture_exemple.pdf
-📄 Traitement du fichier: facture_exemple.pdf
-🔍 Extraction des données du PDF...
-=== RÉSUMÉ EXTRACTION ===
-Numéro: 20240001234567890
-Date: 2024-01-15
-Montant total: 1200.00 TND
-Fournisseur: TRADENET TUNISIE
-Client: ENTREPRISE CLIENT SARL
-Articles: 1
-Taxes: 1
-========================
-✅ Validation des données...
-🔧 Génération du XML TEIF...
-✅ Fichier TEIF généré: ./teif_facture_exemple.xml
-
-🎉 Conversion terminée avec succès!
-📁 Fichier généré: ./teif_facture_exemple.xml
-```
-
-### Aperçu des données d'exemple
-
-```bash
-$ python main.py --sample --preview
-📋 Génération avec données d'exemple...
-=== RÉSUMÉ EXTRACTION ===
-Numéro: 20240001234567890
-Date: 2024-01-15
-Montant total: 1200.00 TND
-Fournisseur: TRADENET TUNISIE
-Client: ENTREPRISE CLIENT SARL
-Articles: 1
-Taxes: 1
-========================
-
-==================================================
-APERÇU XML TEIF (DONNÉES EXEMPLE):
-==================================================
-<?xml version="1.0" ?>
-<TEIFInvoice xmlns="http://www.tradenet.com.tn/teif/invoice/1.0"...>
-...
-</TEIFInvoice>
-```
-
-## Développement
-
-### Utilisation des modules
-
-```python
-from src.extractors import PDFExtractor
-from src.teif import TEIFGenerator
-from src.utils import validate_pdf_file
-
-# Extraction
-extractor = PDFExtractor()
-invoice_data = extractor.extract_from_pdf("facture.pdf")
-
-# Génération TEIF
-generator = TEIFGenerator()
-teif_xml = generator.generate_xml(invoice_data)
-```
-
-### Personnalisation
-
-Pour adapter le script à de nouveaux formats :
-
-1. **Modifier les patterns** dans `src/extractors/pdf_extractor.py`
-2. **Étendre le générateur** dans `src/teif/generator.py`
-3. **Ajouter des utilitaires** dans `src/utils/helpers.py`
-4. **Tester** avec vos fichiers spécifiques
-
-### Tests
-
-```bash
-# Test avec données d'exemple
-python main.py --sample --preview
-
-# Test avec vos PDFs
-python main.py votre_facture.pdf --preview
-```
-
-## Limitations
-
-- **Extraction basée sur regex** : Peut nécessiter des ajustements pour certains formats de PDF
-- **Pas de signature réelle** : Les éléments de signature sont des placeholders
-- **Validation XSD** : Validation contre le schéma XSD TTN recommandée
-- **Formats PDF complexes** : Les PDFs avec mise en page complexe peuvent nécessiter des améliorations
-
-## Migration depuis les versions legacy
-
-Si vous utilisiez les anciens scripts :
-
-- `transform_invoice_simple.py` → `python main.py`
-- `transform_invoice.py` → `python main.py` (même interface)
-
-Les anciens scripts restent disponibles dans le dossier `legacy/` pour compatibilité.
-
-## Support
-
-Pour des questions ou problèmes :
-
-1. Vérifiez que vos PDFs sont lisibles et contiennent du texte extractible
-2. Testez d'abord avec `--preview` pour voir les données extraites
-3. Ajustez les patterns regex si nécessaire pour votre format
-4. Validez le XML généré contre le schéma XSD TTN
+1. Forkez le dépôt
+2. Créez une branche pour votre fonctionnalité (`git checkout -b feature/ma-nouvelle-fonctionnalite`)
+3. Committez vos changements (`git commit -am 'Ajout d\'une nouvelle fonctionnalité'`)
+4. Poussez vers la branche (`git push origin feature/ma-nouvelle-fonctionnalite`)
+5. Créez une Pull Request
 
 ## Licence
 
-Projet TTN - Convertisseur PDF vers TEIF
+Ce projet est sous licence MIT. Voir le fichier `LICENSE` pour plus de détails.
 
----
+## Auteur
 
-*Développé pour la conformité au standard TEIF (Tunisian Electronic Invoice Format) de TTN*
+- **Votre Nom** - [@votrepseudo](https://github.com/votrepseudo)
 
-```xml
-<?xml version="1.0" ?>
-<TEIFInvoice xmlns="http://www.tradenet.com.tn/teif/invoice/1.0" 
-             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
-             xsi:schemaLocation="http://www.tradenet.com.tn/teif/invoice/1.0 teif_invoice_schema.xsd">
-    <InvoiceHeader>
-        <InvoiceNumber>INV-2024-001</InvoiceNumber>
-        <InvoiceDate>2024-07-30</InvoiceDate>
-{{ ... }}
-        <TotalAmount>2000.00</TotalAmount>
-    </InvoiceHeader>
-    <!-- ... autres éléments ... -->
-</TEIFInvoice>
-```
+## Remerciements
 
-## Support
-
-Pour toute question ou problème, veuillez consulter la documentation officielle TTN ou contacter le support technique.
+- L'équipe TTN pour la documentation du standard TEIF
+- La communauté Python pour les bibliothèques utilisées
+- Tous les contributeurs qui ont aidé à améliorer ce projet

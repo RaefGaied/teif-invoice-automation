@@ -1,176 +1,176 @@
-"""
-Base Extractor Module
-===================
-
-Module définissant les classes de base pour l'extraction de données de factures.
-"""
-
-from abc import ABC, abstractmethod
-from typing import Dict, Any, List, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Optional, Any, TypeVar, Generic, Type
+import json
+import os
+
+# Type variable for generic extractor configuration
+T = TypeVar('T')
 
 @dataclass
 class ExtractorConfig:
-    """Configuration pour l'extraction de données."""
-    date_formats: List[str] = None
+    """Configuration de base pour les extracteurs."""
+    date_formats: List[str] = field(
+        default_factory=lambda: ["%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d", "%d.%m.%Y"]
+    )
     amount_decimal_separator: str = ","
-    amount_thousands_separator: str = " "
+    amount_thousand_separator: str = " "
     default_currency: str = "TND"
-    remove_spaces: bool = True
-    normalize_text: bool = True
+    language: str = "fr"
+    debug_mode: bool = False
+
+class BaseExtractor(Generic[T]):
+    """Classe de base pour l'extraction de données."""
     
-class BaseFieldExtractor:
-    """Classe de base pour l'extraction de champs spécifiques."""
+    def __init__(self, config: Optional[ExtractorConfig] = None):
+        """Initialise l'extracteur avec une configuration optionnelle."""
+        self.config = config or ExtractorConfig()
+        self._debug_log: List[str] = []
     
-    def __init__(self, config: ExtractorConfig):
-        self.config = config
+    def extract(self, source: Any) -> Dict[str, Any]:
+        """Méthode principale d'extraction à implémenter par les sous-classes."""
+        raise NotImplementedError("La méthode extract() doit être implémentée par les sous-classes")
     
-    def clean_amount(self, amount_str: str) -> float:
-        """Nettoie et convertit une chaîne de montant en float."""
+    def save_extracted_data(self, data: Dict[str, Any], output_path: str, 
+                          format: str = "txt", encoding: str = "utf-8") -> str:
+        """
+        Enregistre les données extraites dans un fichier.
+        
+        Args:
+            data: Données à enregistrer
+            output_path: Chemin de sortie (sans extension)
+            format: Format de sortie ('txt' ou 'json')
+            encoding: Encodage du fichier de sortie
+            
+        Returns:
+            Chemin du fichier généré
+        """
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        if format.lower() == "json":
+            return self._save_as_json(data, output_path, encoding)
+        else:
+            return self._save_as_text(data, output_path, encoding)
+    
+    def _save_as_text(self, data: Dict[str, Any], output_path: Path, 
+                     encoding: str = "utf-8") -> str:
+        """
+        Enregistre les données au format texte lisible.
+        
+        Args:
+            data: Données à enregistrer
+            output_path: Chemin de sortie (sans extension)
+            encoding: Encodage du fichier
+            
+        Returns:
+            Chemin du fichier généré
+        """
+        text_lines = ["=== Données extraites ==="]
+        text_lines.append(f"Généré le: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        text_lines.append("=" * 50)
+        
+        for section, content in data.items():
+            if isinstance(content, dict):
+                text_lines.append(f"\n--- {section.upper()} ---")
+                for key, value in content.items():
+                    if isinstance(value, (list, dict)):
+                        value = json.dumps(value, ensure_ascii=False, indent=2)
+                    text_lines.append(f"{key}: {value}")
+            else:
+                text_lines.append(f"\n{section}: {content}")
+        
+        # Ajout des logs de débogage si en mode debug
+        if self.config.debug_mode and self._debug_log:
+            text_lines.append("\n=== LOGS DE DÉBOGAGE ===")
+            text_lines.extend(self._debug_log)
+        
+        # Création du fichier
+        output_file = output_path.with_suffix('.txt')
+        with open(output_file, 'w', encoding=encoding) as f:
+            f.write('\n'.join(text_lines))
+        
+        return str(output_file)
+    
+    def _save_as_json(self, data: Dict[str, Any], output_path: Path, 
+                     encoding: str = "utf-8") -> str:
+        """
+        Enregistre les données au format JSON.
+        
+        Args:
+            data: Données à enregistrer
+            output_path: Chemin de sortie (sans extension)
+            encoding: Encodage du fichier
+            
+        Returns:
+            Chemin du fichier généré
+        """
+        output_file = output_path.with_suffix('.json')
+        with open(output_file, 'w', encoding=encoding) as f:
+            json.dump(data, f, ensure_ascii=False, indent=2, 
+                     default=self._json_serializer)
+        
+        return str(output_file)
+    
+    def _json_serializer(self, obj: Any) -> Any:
+        """Sérialiseur personnalisé pour les objets non sérialisables par défaut."""
+        if isinstance(obj, (datetime,)):
+            return obj.isoformat()
+        elif hasattr(obj, '__dict__'):
+            return obj.__dict__
+        raise TypeError(f"Type {type(obj)} non sérialisable")
+    
+    def _log_debug(self, message: str) -> None:
+        """Enregistre un message de débogage."""
+        if self.config.debug_mode:
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            self._debug_log.append(f"[{timestamp}] {message}")
+    
+    def _format_amount(self, amount_str: str) -> float:
+        """
+        Formate un montant selon la configuration de l'extracteur.
+        
+        Args:
+            amount_str: Chaîne représentant le montant
+            
+        Returns:
+            float: Montant formaté
+        """
         if not amount_str:
             return 0.0
-        
-        # Supprimer les séparateurs de milliers
-        cleaned = amount_str.replace(self.config.amount_thousands_separator, "")
-        # Convertir le séparateur décimal
-        cleaned = cleaned.replace(self.config.amount_decimal_separator, ".")
-        # Supprimer tous les caractères non numériques sauf le point
-        cleaned = "".join(c for c in cleaned if c.isdigit() or c == ".")
+            
+        # Nettoyage des espaces et remplacement des séparateurs
+        clean_str = str(amount_str).strip()
+        clean_str = clean_str.replace(self.config.amount_thousand_separator, "")
+        clean_str = clean_str.replace(",", ".")
         
         try:
-            return float(cleaned)
-        except ValueError:
+            return float(clean_str)
+        except (ValueError, TypeError):
+            self._log_debug(f"Impossible de convertir le montant: {amount_str}")
             return 0.0
     
-    def clean_date(self, date_str: str) -> Optional[datetime]:
-        """Tente de parser une date selon les formats configurés."""
-        if not date_str or not self.config.date_formats:
+    def _parse_date(self, date_str: str) -> Optional[datetime]:
+        """
+        Tente de parser une date selon les formats configurés.
+        
+        Args:
+            date_str: Chaîne représentant une date
+            
+        Returns:
+            Objet datetime ou None si la date n'a pas pu être parsée
+        """
+        if not date_str:
             return None
             
-        for date_format in self.config.date_formats:
+        date_str = str(date_str).strip()
+        
+        for fmt in self.config.date_formats:
             try:
-                return datetime.strptime(date_str.strip(), date_format)
+                return datetime.strptime(date_str, fmt)
             except ValueError:
                 continue
+        
+        self._log_debug(f"Format de date non reconnu: {date_str}")
         return None
-    
-    def clean_text(self, text: str) -> str:
-        """Nettoie une chaîne de texte selon la configuration."""
-        if not text:
-            return ""
-            
-        cleaned = text.strip()
-        if self.config.remove_spaces:
-            cleaned = " ".join(cleaned.split())
-        if self.config.normalize_text:
-            cleaned = cleaned.upper()
-        return cleaned
-
-class BaseExtractor(ABC):
-    """Classe de base abstraite pour l'extraction de données de factures."""
-    
-    def __init__(self, config: ExtractorConfig = None):
-        self.config = config or ExtractorConfig()
-        self.field_extractor = BaseFieldExtractor(self.config)
-    
-    @abstractmethod
-    def extract(self, source: Any) -> Dict[str, Any]:
-        """
-        Extrait les données de la source.
-        
-        Args:
-            source: La source des données (fichier, texte, etc.)
-            
-        Returns:
-            Dict contenant les données extraites
-        """
-        pass
-    
-    def validate_extracted_data(self, data: Dict[str, Any]) -> List[str]:
-        """
-        Valide les données extraites.
-        
-        Args:
-            data: Dictionnaire des données extraites
-            
-        Returns:
-            Liste des erreurs de validation
-        """
-        errors = []
-        required_fields = {
-            "invoice_number": "Numéro de facture",
-            "invoice_date": "Date de facture",
-            "total_amount": "Montant total",
-            "sender": "Informations fournisseur",
-            "receiver": "Informations client"
-        }
-        
-        for field, label in required_fields.items():
-            if field not in data or not data[field]:
-                errors.append(f"Champ obligatoire manquant: {label}")
-                
-        if "items" in data and not data["items"]:
-            errors.append("Aucune ligne de facture trouvée")
-            
-        return errors
-    
-    def clean_extracted_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Nettoie et normalise les données extraites.
-        
-        Args:
-            data: Dictionnaire des données extraites
-            
-        Returns:
-            Dictionnaire des données nettoyées
-        """
-        cleaned = {}
-        
-        # Nettoyage des champs textuels
-        text_fields = ["invoice_number", "sender.name", "receiver.name", "description"]
-        for field in text_fields:
-            value = data
-            parts = field.split(".")
-            try:
-                for part in parts[:-1]:
-                    value = value[part]
-                if parts[-1] in value:
-                    value[parts[-1]] = self.field_extractor.clean_text(value[parts[-1]])
-            except (KeyError, TypeError):
-                continue
-        
-        # Nettoyage des montants
-        amount_fields = ["total_amount", "amount_ht", "amount_ttc"]
-        for field in amount_fields:
-            if field in data:
-                cleaned[field] = self.field_extractor.clean_amount(str(data[field]))
-        
-        # Nettoyage des dates
-        date_fields = ["invoice_date", "due_date"]
-        for field in date_fields:
-            if field in data:
-                cleaned[field] = self.field_extractor.clean_date(str(data[field]))
-        
-        # Nettoyage des articles
-        if "items" in data and isinstance(data["items"], list):
-            cleaned_items = []
-            for item in data["items"]:
-                cleaned_item = {
-                    "description": self.field_extractor.clean_text(str(item.get("description", ""))),
-                    "quantity": float(item.get("quantity", 0)),
-                    "unit_price": self.field_extractor.clean_amount(str(item.get("unit_price", 0))),
-                }
-                if "taxes" in item:
-                    cleaned_item["taxes"] = [
-                        {
-                            "tax_type": tax.get("tax_type", ""),
-                            "rate": float(tax.get("rate", 0)),
-                            "amount": self.field_extractor.clean_amount(str(tax.get("amount", 0)))
-                        }
-                        for tax in item["taxes"]
-                    ]
-                cleaned_items.append(cleaned_item)
-            cleaned["items"] = cleaned_items
-        
-        return cleaned
