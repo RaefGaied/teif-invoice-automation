@@ -43,8 +43,8 @@ class TestLinSection(unittest.TestCase):
             category='S',
             details=[{'rate': 12, 'amount': 2.0}]
         )
-        line_item.add_amount(2.0, 'I-183', 'TND')
-        line_item.add_amount(2.0, 'I-171', 'TND')
+        line_item.add_amount(2.0, 'TND', 'I-183')
+        line_item.add_amount(2.0, 'TND', 'I-171')
         
         self.lin_section.add_line(line_item)
         self.lin_section.to_xml(self.parent)
@@ -106,8 +106,8 @@ class TestLinSection(unittest.TestCase):
             category='S',
             details=[{'rate': 12, 'amount': 2.0}]
         )
-        line1.add_amount(2.0, 'I-183', 'TND')
-        line1.add_amount(2.0, 'I-171', 'TND')
+        line1.add_amount(2.0, 'TND', 'I-183')
+        line1.add_amount(2.0, 'TND', 'I-171')
         
         # Add a sub-line item
         sub_line = LinItem(line_number=1.1)
@@ -118,7 +118,7 @@ class TestLinSection(unittest.TestCase):
             lang='fr'
         )
         sub_line.set_quantity(1.0, 'UNIT')
-        sub_line.add_amount(2.0, 'I-100', 'TND')
+        sub_line.add_amount(2.0, 'TND', 'I-100')
         line1.add_sub_line(sub_line)
         
         # Add second line item
@@ -136,7 +136,7 @@ class TestLinSection(unittest.TestCase):
             category='S',
             details=[{'rate': 19, 'amount': 3.8}]
         )
-        line2.add_amount(20.0, 'I-100', 'TND')
+        line2.add_amount(20.0, 'TND', 'I-100')
         
         # Add lines to section
         section.add_line(line1)
@@ -248,8 +248,8 @@ class TestLinItem(unittest.TestCase):
             category='S',
             details=[{'rate': 12, 'amount': 2.0}]
         )
-        line.add_amount(2.0, 'I-183', 'TND')
-        line.add_amount(2.0, 'I-171', 'TND')
+        line.add_amount(2.0, 'TND', 'I-183')
+        line.add_amount(2.0, 'TND', 'I-171')
 
         # Create root element and add line
         root = ET.Element('TestRoot')

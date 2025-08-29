@@ -1,12 +1,20 @@
 """
 Module pour la gestion des signatures électroniques TEIF.
 """
-from typing import Dict, Any, Optional, List, Union, Tuple
+from typing import Dict, Any, Optional, List, Union, Tuple, cast
 import xml.etree.ElementTree as ET
-from datetime import datetime
+from datetime import datetime, timezone
 import base64
+import hashlib
+import re
 from lxml import etree
 from OpenSSL import crypto
+from lxml.etree import _Element as Element  # type: ignore
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives.serialization import load_pem_private_key
+from cryptography.hazmat.backends import default_backend
+import copy
 
 
 class SignatureSection:
@@ -120,7 +128,7 @@ class SignatureSection:
             cert_elem = ET.SubElement(signature, 'Certificate')
             # Remove headers and newlines for storage
             cert_data = '\n'.join(line.strip() for line in cert_pem.split('\n')
-                                 if line.strip() and not line.startswith('-----'))
+                                 if line.strip() and not line.startswith('-----') and not line.endswith('-----'))
             cert_elem.text = cert_data
             
             # Add signature value (placeholder, actual signing would be done here)
@@ -281,26 +289,51 @@ def _load_certificate(cert_data: str) -> crypto.X509:
         raise SignatureError(f"Impossible de charger le certificat: {str(e)}")
 
 
-def _load_private_key(key_data: str, password: Optional[str] = None) -> crypto.PKey:
-    """Charge une clé privée à partir d'un fichier ou de données brutes."""
+def _load_private_key(key_data: bytes, password: Optional[bytes] = None):
+    """
+    Load a private key from PEM data, handling both PKCS#1 and PKCS#8 formats.
+    
+    Args:
+        key_data: The private key data in PEM format
+        password: Optional password if the key is encrypted
+        
+    Returns:
+        The loaded private key
+        
+    Raises:
+        ValueError: If the key cannot be loaded
+    """
     try:
-        if '-----BEGIN PRIVATE KEY-----' in key_data:
-            # Données PEM
-            return crypto.load_privatekey(
-                crypto.FILETYPE_PEM,
-                key_data.encode(),
-                password.encode() if password else None
-            )
-        else:
-            # Fichier
-            with open(key_data, 'rb') as f:
-                return crypto.load_privatekey(
-                    crypto.FILETYPE_PEM,
-                    f.read(),
-                    password.encode() if password else None
+        # Try loading as PKCS#8 first
+        key = load_pem_private_key(
+            key_data,
+            password=password,
+            backend=default_backend()
+        )
+        return key
+    except ValueError as e:
+        if "Could not deserialize key data" in str(e):
+            # If PKCS#8 fails, try PKCS#1 format by adding the appropriate headers
+            try:
+                key_data_pkcs1 = key_data
+                if b'-----BEGIN RSA PRIVATE KEY-----' not in key_data:
+                    key_data_pkcs1 = (
+                        b"-----BEGIN RSA PRIVATE KEY-----\n" +
+                        key_data.replace(b" ", b"").replace(b"\n", b"") +
+                        b"\n-----END RSA PRIVATE KEY-----"
+                    )
+                key = load_pem_private_key(
+                    key_data_pkcs1,
+                    password=password,
+                    backend=default_backend()
                 )
+                return key
+            except Exception as inner_e:
+                raise ValueError(f"Failed to load private key (tried PKCS#1 and PKCS#8): {str(inner_e)}")
+        else:
+            raise
     except Exception as e:
-        raise SignatureError(f"Impossible de charger la clé privée: {str(e)}")
+        raise ValueError(f"Failed to load private key: {str(e)}")
 
 
 def _create_signed_info(element: ET.Element) -> bytes:
@@ -357,9 +390,168 @@ def _sign_data(data: bytes, private_key: crypto.PKey) -> bytes:
         raise SignatureError(f"Erreur lors de la signature des données: {str(e)}")
 
 
+def sign_xml(xml_data: Union[str, bytes], cert_pem: bytes, key_pem: bytes, key_password: Optional[bytes] = None) -> bytes:
+    """
+    Sign an XML document with XAdES-B signature.
+    
+    Args:
+        xml_data: The XML document to sign (as string or bytes)
+        cert_pem: The signer's certificate in PEM format
+        key_pem: The private key in PEM format
+        key_password: Password for the private key (if encrypted)
+        
+    Returns:
+        Signed XML document as bytes
+        
+    Raises:
+        SignatureError: If there's an error during the signing process
+    """
+    try:
+        # Parse the XML
+        if isinstance(xml_data, str):
+            xml_data = xml_data.encode('utf-8')
+            
+        # Parse the XML document
+        parser = etree.XMLParser(remove_blank_text=True)
+        root = etree.fromstring(xml_data, parser=parser)
+        
+        # Register namespaces
+        ns = {
+            'ds': 'http://www.w3.org/2000/09/xmldsig#',
+            'xades': 'http://uri.etsi.org/01903/v1.3.2#'
+        }
+        
+        # Find or create the signature element
+        signature = root.find('.//ds:Signature', namespaces=ns)
+        if signature is None:
+            raise SignatureError("No Signature element found in the XML document")
+            
+        # Load the private key
+        try:
+            private_key = _load_private_key(key_pem, key_password)
+        except Exception as e:
+            raise SignatureError(f"Failed to load private key: {str(e)}")
+            
+        # 2. Calculate digest of the document (excluding signature)
+        # Create a copy of the document without the signature
+        doc_without_sig = etree.Element(root.tag, root.attrib)
+        for elem in root:
+            if elem.tag != f"{{{ns['ds']}}}Signature":
+                doc_without_sig.append(copy.deepcopy(elem))
+        
+        # Canonicalize the document without signature
+        c14n_doc = etree.tostring(
+            doc_without_sig,
+            method='c14n',
+            exclusive=True,
+            with_comments=False
+        )
+        
+        # Calculate digest of the document
+        doc_digest = hashlib.sha256(c14n_doc).digest()
+        doc_digest_b64 = base64.b64encode(doc_digest).decode('ascii')
+        
+        # Update the reference to the document
+        ref = signature.find('.//ds:Reference[@Id="r-id-frs"]', namespaces=ns)
+        if ref is not None:
+            digest_value = ref.find('.//ds:DigestValue', namespaces=ns)
+            if digest_value is not None:
+                digest_value.text = doc_digest_b64
+        
+        # 3. Calculate digest of the signed properties
+        signed_props = signature.find('.//xades:SignedProperties', namespaces=ns)
+        if signed_props is None:
+            raise SignatureError("No SignedProperties element found")
+            
+        # Set the Id attribute if not present
+        if 'Id' not in signed_props.attrib:
+            signed_props.attrib['Id'] = 'xades-SigFrs'
+            
+        # Get the Id for reference
+        signed_props_id = signed_props.attrib['Id']
+        
+        # Update the reference URI in the signature
+        ref = signature.find(f'.//ds:Reference[@Type="http://uri.etsi.org/01903#SignedProperties"]', namespaces=ns)
+        if ref is not None:
+            ref.attrib['URI'] = f"#{signed_props_id}"
+            
+            # Canonicalize the SignedProperties element
+            c14n_signed_props = etree.tostring(
+                signed_props,
+                method='c14n',
+                exclusive=True,
+                with_comments=False
+            )
+            
+            # Calculate digest of the SignedProperties
+            signed_props_digest = hashlib.sha256(c14n_signed_props).digest()
+            signed_props_digest_b64 = base64.b64encode(signed_props_digest).decode('ascii')
+            
+            # Update the digest value
+            digest_value = ref.find('.//ds:DigestValue', namespaces=ns)
+            if digest_value is not None:
+                digest_value.text = signed_props_digest_b64
+        
+        # 4. Calculate the signature value
+        signed_info = signature.find('.//ds:SignedInfo', namespaces=ns)
+        if signed_info is None:
+            raise SignatureError("No SignedInfo element found")
+            
+        # Canonicalize the SignedInfo element
+        c14n_signed_info = etree.tostring(
+            signed_info,
+            method='c14n',
+            exclusive=True,
+            with_comments=False
+        )
+        
+        # Sign the canonicalized SignedInfo
+        signature_value = private_key.sign(
+            c14n_signed_info,
+            padding.PKCS1v15(),
+            hashes.SHA256()
+        )
+        signature_value_b64 = base64.b64encode(signature_value).decode('ascii')
+        
+        # Update the SignatureValue element
+        sig_value_elem = signature.find('.//ds:SignatureValue', namespaces=ns)
+        if sig_value_elem is not None:
+            sig_value_elem.text = signature_value_b64
+        
+        # 5. Add the certificate to the KeyInfo
+        x509_data = signature.find('.//ds:X509Data', namespaces=ns)
+        if x509_data is not None:
+            # Remove any existing X509Certificate elements
+            for elem in x509_data.findall('.//ds:X509Certificate', namespaces=ns):
+                x509_data.remove(elem)
+                
+            # Add the certificate (remove PEM headers/footers and newlines)
+            cert_pem_str = cert_pem.decode('utf-8')
+            cert_clean = '\n'.join(line.strip() 
+                                 for line in cert_pem_str.split('\n') 
+                                 if line.strip() and 
+                                 not line.startswith('-----') and 
+                                 not line.endswith('-----'))
+            
+            cert_elem = etree.SubElement(x509_data, f"{{{ns['ds']}}}X509Certificate")
+            cert_elem.text = cert_clean
+        
+        # Return the signed XML
+        return etree.tostring(
+            root,
+            xml_declaration=True,
+            encoding='UTF-8',
+            pretty_print=True
+        )
+        
+    except Exception as e:
+        raise SignatureError(f"Error signing XML: {str(e)}")
+
+
 __all__ = [
     'create_signature',
     'add_signature',
+    'sign_xml',
     'SignatureError',
     'SignatureSection'
 ]

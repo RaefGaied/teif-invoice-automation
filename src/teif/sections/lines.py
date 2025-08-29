@@ -144,14 +144,14 @@ class LinItem:
         Add a monetary amount to the line item.
         
         Args:
-            amount: The amount
-            currency: Currency code
-            type_code: Type code for the amount
+            amount: The amount value
+            currency: Currency code (e.g., 'EUR', 'TND')
+            type_code: Type code for the amount (e.g., 'I-183')
         """
         self.amounts.append({
             'amount': amount,
-            'currency': currency,
-            'type_code': type_code
+            'type_code': type_code,
+            'currency': currency
         })
     
     def add_additional_info(self, code: str, description: str, lang: str = 'fr') -> None:
@@ -220,9 +220,9 @@ class LinItem:
         
         # Add amounts if any
         if self.amounts:
-            moa_details = ET.SubElement(lin, 'MoaDetails')
+            lin_moa = ET.SubElement(lin, 'LinMoa')
             for amount in self.amounts:
-                self._add_amount_element(moa_details, amount)
+                self._add_amount_element(lin_moa, amount)
         
         # Add taxes if any
         for tax in self.taxes:
@@ -269,13 +269,14 @@ class LinItem:
         Add amount information to the parent XML element.
         
         Args:
-            parent: The parent XML element
+            parent: The parent XML element (LinMoa)
             amount_data: Dictionary containing amount information with keys:
                 - amount: The amount value
                 - type_code: The amount type code (e.g., 'I-183')
                 - currency: The currency code (default: 'TND')
         """
-        moa = ET.SubElement(parent, 'Moa', {
+        moa_details = ET.SubElement(parent, 'MoaDetails')
+        moa = ET.SubElement(moa_details, 'Moa', {
             'amountTypeCode': amount_data.get('type_code', ''),
             'currencyCodeList': 'ISO_4217'
         })

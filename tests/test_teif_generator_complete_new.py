@@ -20,6 +20,63 @@ def generate_complete_teif_invoice():
         # Header information
         "version": "1.8.8",
         "controlling_agency": "TTN",
+        # Seller information (vendeur)
+        "seller": {
+            "identifier": "1234567AAM001",  
+            "identifier_type": "I-01",  
+            "name": "SOCIETE FOURNISSEUR SARL",
+            "legal_form": "SARL",
+            "vat_number": "12345678",
+            "address": {
+                "street": "AVENUE HABIB BOURGUIBA",
+                "city": "TUNIS",
+                "postal_code": "1000",
+                "country_code": "TN",  
+                "lang": "FR"  
+            },
+            "contacts": [
+                {
+                    "function_code": "I-94",  
+                    "name": "Service Commercial",
+                    "communications": [
+                        {"type": "I-101", "value": "+216 70 000 000"},  
+                        {"type": "I-102", "value": "commercial@fournisseur.tn"}  
+                    ]
+                }
+            ],
+            "references": [
+                {"type": "VA", "value": "12345678"}  
+            ]
+        },
+
+        # Buyer information (acheteur)
+        "buyer": {
+            "identifier": "9876543BBM002",  
+            "identifier_type": "I-01",  
+            "name": "SOCIETE CLIENTE SARL",
+            "legal_form": "SARL",
+            "vat_number": "87654321",
+            "address": {
+                "street": "AVENUE MOHAMED V",
+                "city": "SOUSSE",
+                "postal_code": "4000",
+                "country_code": "TN",  
+                "lang": "FR"  
+            },
+            "contacts": [
+                {
+                    "function_code": "I-94",  
+                    "name": "Service Achat",
+                    "communications": [
+                        {"type": "I-101", "value": "+216 71 000 001"},  
+                        {"type": "I-104", "value": "achat@client.tn"}  
+                    ]
+                }
+            ],
+            "references": [
+                {"type": "VA", "value": "87654321"}  
+            ]
+        },
         
         # Invoice header
         "header": {
@@ -29,8 +86,8 @@ def generate_complete_teif_invoice():
         
         # BGM (Beginning of Message) section
         "bgm": {
-            "document_number": "FACT-2023-001",  # Required field
-            "document_type": "I-11",  # I-11 = Facture
+            "document_number": "FACT-2023-001",  
+            "document_type": "I-11",  
             "document_type_label": "Facture"
         },
         
@@ -38,17 +95,17 @@ def generate_complete_teif_invoice():
         "dates": [
             {
                 "date_text": datetime.now().strftime("%d%m%y"),
-                "function_code": "I-31",  # Date de facture
+                "function_code": "I-31",  
                 "format": "ddMMyy"
             },
             {
                 "date_text": f"{(datetime.now() - timedelta(days=30)).strftime('%d%m%y')}-{datetime.now().strftime('%d%m%y')}",
-                "function_code": "I-36",  # Période de facturation (début-fin)
+                "function_code": "I-36",  
                 "format": "ddMMyy-ddMMyy"
             },
             {
                 "date_text": (datetime.now() + timedelta(days=30)).strftime("%d%m%y"),
-                "function_code": "I-32",  # Date d'échéance
+                "function_code": "I-32",  
                 "format": "ddMMyy"
             },
         ],
@@ -156,6 +213,9 @@ def generate_complete_teif_invoice():
         # Invoice totals
         "totals": {
             "currency": "TND",
+            "total_without_tax": 590.0,  
+            "total_tax": 112.1,          
+            "total_with_tax": 702.0,     
             "line_extension_amount": 702.0,
             "tax_exclusive_amount": 590.0,
             "tax_inclusive_amount": 702.0,
@@ -175,7 +235,7 @@ def generate_complete_teif_invoice():
         
         # Payment terms
         "payment_terms": {
-            "type": "I-10",  # Paiement à réception
+            "type": "I-10",  
             "description": "Paiement à 30 jours fin de mois",
             "due_date": (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d"),
             "discount_percent": 2.0,
@@ -184,7 +244,7 @@ def generate_complete_teif_invoice():
         
         # Payment means
         "payment_means": {
-            "payment_means_code": "I-30",  # Virement bancaire
+            "payment_means_code": "I-30",  
             "payment_id": "VIR-2023-001",
             "payee_financial_account": {
                 "iban": "TN5904018104003691234567",
@@ -195,11 +255,11 @@ def generate_complete_teif_invoice():
         # Additional references
         "references": [
             {
-                "type": "ON",  # Numéro de commande
+                "type": "ON",  
                 "value": "CMD-2023-456"
             },
             {
-                "type": "ABO",  # Numéro d'abonnement
+                "type": "ABO",  
                 "value": "ABO-2023-789"
             }
         ],
@@ -208,7 +268,7 @@ def generate_complete_teif_invoice():
         "additional_documents": [
             {
                 "id": "DOC-001",
-                "type": "I-201",  # Facture proforma
+                "type": "I-201",  
                 "name": "Facture proforma",
                 "date": (datetime.now() - timedelta(days=5)).strftime("%Y%m%d"),
                 "description": "Facture proforma envoyée le 5 jours avant"

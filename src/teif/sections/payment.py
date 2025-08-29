@@ -181,23 +181,43 @@ def add_payment_terms(parent: ET.Element, payment_data: Dict[str, Any]) -> None:
     Args:
         parent: L'élément parent XML
         payment_data: Dictionnaire contenant les configurations de paiement
-            - sections: Liste des sections de paiement
-                - type: Type de section ('terms' ou 'financial_institution')
-                - data: Données spécifiques au type de section
+            - description: Description des conditions de paiement (obligatoire)
+            - type: Type de paiement (optionnel, ex: 'I-10')
+            - due_date: Date d'échéance (optionnelle)
+            - discount_percent: Pourcentage de remise (optionnel)
+            - discount_due_date: Date limite pour la remise (optionnelle)
     """
-    if not payment_data or 'sections' not in payment_data or not payment_data['sections']:
+    if not payment_data:
         return
     
+    # Créer la structure de base PytSection > PytSectionDetails > Pyt
     pyt_section = ET.SubElement(parent, "PytSection")
+    pyt_section_details = ET.SubElement(pyt_section, "PytSectionDetails")
+    pyt = ET.SubElement(pyt_section_details, "Pyt")
     
-    for section in payment_data['sections']:
-        section_type = section.get('type')
-        section_data = section.get('data', {})
+    # Ajouter la description des conditions de paiement
+    if 'description' in payment_data:
+        payment_terms_desc = ET.SubElement(pyt, "PaymentTearmsDescription")
+        payment_terms_desc.text = str(payment_data['description'])
+    
+    # Ajouter le type de paiement si fourni
+    if 'type' in payment_data:
+        payment_terms_type = ET.SubElement(pyt, "PaymentTearmsTypeCode")
+        payment_terms_type.text = str(payment_data['type'])
+    
+    # Ajouter la date d'échéance si fournie
+    if 'due_date' in payment_data:
+        due_date = ET.SubElement(pyt, "DueDate")
+        due_date.text = str(payment_data['due_date'])
+    
+    # Ajouter les informations de remise si fournies
+    if 'discount_percent' in payment_data:
+        discount = ET.SubElement(pyt, "DiscountPercent")
+        discount.text = str(payment_data['discount_percent'])
         
-        if section_type == 'terms':
-            add_payment_term(pyt_section, section_data)
-        elif section_type == 'financial_institution':
-            add_financial_institution(pyt_section, section_data)
+        if 'discount_due_date' in payment_data:
+            discount_date = ET.SubElement(pyt, "DiscountDueDate")
+            discount_date.text = str(payment_data['discount_due_date'])
 
 def add_payment_term(parent: ET.Element, term_data: Dict[str, Any]) -> None:
     """
