@@ -112,67 +112,78 @@ class PaymentSection:
     
     def _add_payment_term_element(self, parent: ET.Element, term: Dict[str, Any]) -> None:
         """Helper method to add a payment term element."""
+        # Create the payment term element
         pyt = ET.SubElement(parent, 'Pyt')
         
-        # Add attributes if any
-        for key, value in term.get('attributes', {}).items():
-            pyt.set(key, str(value))
-        
         # Add payment term code
-        pyt_code = ET.SubElement(pyt, 'PytCode')
+        pyt_code = ET.SubElement(pyt, 'PaymentTermsTypeCode')
         pyt_code.text = term['code']
         
-        # Add payment term description
-        pyt_desc = ET.SubElement(pyt, 'PytDesc')
-        pyt_desc.text = term['description']
+        # Add description if provided
+        if 'description' in term and term['description']:
+            desc = ET.SubElement(pyt, 'Description')
+            desc.text = term['description']
         
         # Add due date if provided
-        if term.get('due_date'):
+        if 'due_date' in term and term['due_date']:
             due_date = ET.SubElement(pyt, 'DueDate')
             due_date.text = term['due_date']
         
         # Add amount if provided
-        if term.get('amount') is not None:
-            from .amounts import create_amount_element
-            amount_data = {
-                'amount': term['amount'],
-                'amount_type': 'I-114',  # Montant du paiement
-                'currency': term.get('currency', self.currency)
-            }
-            create_amount_element(pyt, amount_data)
+        if 'amount' in term and term['amount'] is not None:
+            # Create Moa element for payment amount
+            moa = ET.SubElement(pyt, 'Moa', amountTypeCode='PAYMENT_AMOUNT')
+            
+            # Add amount element
+            amount = ET.SubElement(moa, 'Amount')
+            amount.set('currencyIdentifier', term.get('currency', self.currency))
+            amount.text = str(term['amount'])
+            
+            # Add amount description
+            desc = ET.SubElement(moa, 'AmountDescription', lang='FR')
+            desc.text = 'Montant du paiement'
     
     def _add_financial_institution_element(self, parent: ET.Element, fi_data: Dict[str, Any]) -> None:
-        """Helper method to add a financial institution element."""
+        """
+        Helper method to add a financial institution element according to TEIF 1.8.8 specs.
+        
+        Args:
+            parent: The parent XML element
+            fi_data: Dictionary containing financial institution data with keys:
+                - function_code: The function code (e.g., 'I-141')
+                - account: Dictionary with 'number' and 'holder' keys
+                - institution: Dictionary with 'name' and optional 'branch_code'
+                - attributes: Optional additional attributes
+        """
+        # Create PytFii element with function code attribute
         pyt_fii = ET.SubElement(parent, 'PytFii')
+        pyt_fii.set('functionCode', fi_data['function_code'])  # Add function code as attribute
         
         # Add attributes if any
         for key, value in fi_data.get('attributes', {}).items():
             pyt_fii.set(key, str(value))
         
-        # Add function code
-        function_code = ET.SubElement(pyt_fii, 'FunctionCode')
-        function_code.text = fi_data['function_code']
+        # Add account holder information
+        account_holder = ET.SubElement(pyt_fii, 'AccountHolder')
+        account_holder.text = str(fi_data['account']['holder'])
         
-        # Add account information
-        account = fi_data['account']
-        account_elem = ET.SubElement(pyt_fii, 'Account')
-        
-        account_number = ET.SubElement(account_elem, 'AccountNumber')
-        account_number.text = str(account['number'])
-        
-        account_holder = ET.SubElement(account_elem, 'AccountHolder')
-        account_holder.text = str(account['holder'])
+        # Add account number
+        account_number = ET.SubElement(pyt_fii, 'AccountNumber')
+        account_number.text = str(fi_data['account']['number'])
         
         # Add institution information
         institution = fi_data['institution']
-        institution_elem = ET.SubElement(pyt_fii, 'FinancialInstitution')
+        institution_elem = ET.SubElement(pyt_fii, 'Institution')
         
-        inst_name = ET.SubElement(institution_elem, 'Name')
+        # Add institution name
+        inst_name = ET.SubElement(institution_elem, 'InstitutionName')
         inst_name.text = institution['name']
         
-        if 'branch_code' in institution and institution['branch_code']:
-            branch_code = ET.SubElement(institution_elem, 'BranchCode')
-            branch_code.text = str(institution['branch_code'])
+        # Add branch code if provided
+        if institution.get('branch_code'):
+            branch = ET.SubElement(institution_elem, 'Branch')
+            branch_id = ET.SubElement(branch, 'BranchIdentifier')
+            branch_id.text = str(institution['branch_code'])
 
 def add_payment_terms(parent: ET.Element, payment_data: Dict[str, Any]) -> None:
     """
@@ -181,43 +192,66 @@ def add_payment_terms(parent: ET.Element, payment_data: Dict[str, Any]) -> None:
     Args:
         parent: L'élément parent XML
         payment_data: Dictionnaire contenant les configurations de paiement
+            - code: Code du type de paiement (obligatoire, ex: 'I-10')
             - description: Description des conditions de paiement (obligatoire)
-            - type: Type de paiement (optionnel, ex: 'I-10')
-            - due_date: Date d'échéance (optionnelle)
+            - due_date: Date d'échéance (optionnelle, format YYYY-MM-DD)
             - discount_percent: Pourcentage de remise (optionnel)
-            - discount_due_date: Date limite pour la remise (optionnelle)
+            - discount_due_date: Date limite pour la remise (optionnelle, format YYYY-MM-DD)
     """
     if not payment_data:
         return
+    
+    # Vérifier les champs obligatoires
+    if 'code' not in payment_data or 'description' not in payment_data:
+        raise ValueError("Les champs 'code' et 'description' sont obligatoires pour les conditions de paiement")
     
     # Créer la structure de base PytSection > PytSectionDetails > Pyt
     pyt_section = ET.SubElement(parent, "PytSection")
     pyt_section_details = ET.SubElement(pyt_section, "PytSectionDetails")
     pyt = ET.SubElement(pyt_section_details, "Pyt")
     
-    # Ajouter la description des conditions de paiement
-    if 'description' in payment_data:
-        payment_terms_desc = ET.SubElement(pyt, "PaymentTearmsDescription")
-        payment_terms_desc.text = str(payment_data['description'])
+    # Ajouter le code du type de paiement (correction de la faute de frappe)
+    payment_terms_type = ET.SubElement(pyt, "PaymentTermsTypeCode")  # Correction ici
+    payment_terms_type.text = str(payment_data['code'])
     
-    # Ajouter le type de paiement si fourni
-    if 'type' in payment_data:
-        payment_terms_type = ET.SubElement(pyt, "PaymentTearmsTypeCode")
-        payment_terms_type.text = str(payment_data['type'])
+    # Ajouter la description des conditions de paiement (correction de la faute de frappe)
+    payment_terms_desc = ET.SubElement(pyt, "PaymentTermsDescription")  # Correction ici
+    payment_terms_desc.text = str(payment_data['description'])
     
     # Ajouter la date d'échéance si fournie
-    if 'due_date' in payment_data:
-        due_date = ET.SubElement(pyt, "DueDate")
-        due_date.text = str(payment_data['due_date'])
+    if 'due_date' in payment_data and payment_data['due_date']:
+        pyt_dtm = ET.SubElement(pyt, "PytDtm")
+        date_text = ET.SubElement(pyt_dtm, "DateText", 
+                               format="ddMMyy",  # Format cohérent avec le reste du document
+                               functionCode="I-32")  # I-32 = Date d'échéance
+        # Convertir la date au format ddMMyy
+        due_date = datetime.strptime(payment_data['due_date'], "%Y-%m-%d")
+        date_text.text = due_date.strftime("%d%m%y")
     
     # Ajouter les informations de remise si fournies
-    if 'discount_percent' in payment_data:
-        discount = ET.SubElement(pyt, "DiscountPercent")
-        discount.text = str(payment_data['discount_percent'])
+    if 'discount_percent' in payment_data and payment_data['discount_percent'] is not None:
+        pyt_moa = ET.SubElement(pyt, "PytMoa", 
+                              amountTypeCode="I-114",  # I-114 = Montant de la remise
+                              percentageBasis="true",  # Indique qu'il s'agit d'un pourcentage
+                              currencyCodeList="ISO_4217")  # Utilisation de la norme ISO
         
-        if 'discount_due_date' in payment_data:
-            discount_date = ET.SubElement(pyt, "DiscountDueDate")
-            discount_date.text = str(payment_data['discount_due_date'])
+        # Ajouter le montant de la remise
+        amount = ET.SubElement(pyt_moa, "Amount")
+        amount.text = str(payment_data['discount_percent'])
+        
+        # Ajouter la description de la remise
+        amount_desc = ET.SubElement(pyt_moa, "AmountDescription")
+        amount_desc.text = f"Remise de {payment_data['discount_percent']}%"
+        
+        # Ajouter la date limite de remise si fournie
+        if 'discount_due_date' in payment_data and payment_data['discount_due_date']:
+            pyt_dtm = ET.SubElement(pyt, "PytDtm")
+            date_text = ET.SubElement(pyt_dtm, "DateText",
+                                   format="ddMMyy",  # Format cohérent
+                                   functionCode="I-33")  # I-33 = Date limite de remise
+            # Convertir la date au format ddMMyy
+            discount_date = datetime.strptime(payment_data['discount_due_date'], "%Y-%m-%d")
+            date_text.text = discount_date.strftime("%d%m%y")
 
 def add_payment_term(parent: ET.Element, term_data: Dict[str, Any]) -> None:
     """
@@ -242,67 +276,76 @@ def add_payment_term(parent: ET.Element, term_data: Dict[str, Any]) -> None:
 
 def add_financial_institution(parent: ET.Element, fi_data: Dict[str, Any]) -> None:
     """
-    Ajoute dynamiquement les informations sur l'institution financière.
+    Ajoute dynamiquement les informations sur l'institution financière selon les spécifications TEIF 1.8.8.
     
     Args:
         parent: L'élément parent XML
         fi_data: Dictionnaire contenant les données de l'institution financière
-            - function_code: Code de fonction (ex: 'I-141')
-            - account: Dictionnaire des informations de compte
-                - number: Numéro de compte
-                - holder: Identifiant du titulaire
-            - institution: Dictionnaire des informations de l'institution
-                - name: Nom de l'institution
-                - branch_code: Code de l'agence
-            - attributes: Attributs supplémentaires pour PytFii (optionnel)
+            - payment_means_code: Code du moyen de paiement (ex: 'I-30' pour virement)
+            - payment_id: Identifiant du paiement (obligatoire)
+            - due_date: Date d'échéance (optionnelle, format YYYY-MM-DD)
+            - payee_financial_account: Dictionnaire des informations de compte
+                - iban: Numéro IBAN (obligatoire)
+                - account_holder: Nom du titulaire du compte (obligatoire)
+                - financial_institution: Nom de l'institution financière (obligatoire)
+                - branch_code: Code de l'agence (optionnel)
+            - attributes: Attributs supplémentaires (optionnel)
     """
-    pyt_detail = ET.SubElement(parent, "PytSectionDetails")
+    # Vérification des champs obligatoires
+    required_fields = ['payment_means_code', 'payment_id', 'payee_financial_account']
+    for field in required_fields:
+        if field not in fi_data:
+            raise ValueError(f"Le champ '{field}' est obligatoire pour l'institution financière")
     
-    # Add payment term if specified
-    if 'term' in fi_data:
-        add_payment_term(pyt_detail, fi_data['term'])
+    account_data = fi_data['payee_financial_account']
+    required_account_fields = ['iban', 'account_holder', 'financial_institution']
+    for field in required_account_fields:
+        if field not in account_data:
+            raise ValueError(f"Le champ '{field}' est obligatoire pour le compte bancaire")
     
-    # Prepare PytFii attributes
-    fii_attrs = {
-        'functionCode': fi_data.get('function_code', 'I-141')
-    }
+    # Création de la structure de base
+    pyt_section = ET.SubElement(parent, "PytSection")
+    pyt_section_details = ET.SubElement(pyt_section, "PytSectionDetails")
+    pyt = ET.SubElement(pyt_section_details, "Pyt")
+    
+    # Ajout du code de moyen de paiement
+    payment_means = ET.SubElement(pyt, "PaymentMeansCode")
+    payment_means.text = str(fi_data['payment_means_code'])
+    
+    # Ajout de l'identifiant de paiement
+    payment_id = ET.SubElement(pyt, "PaymentID")
+    payment_id.text = str(fi_data['payment_id'])
+    
+    # Ajout de la date d'échéance si fournie
+    if 'due_date' in fi_data and fi_data['due_date']:
+        pyt_dtm = ET.SubElement(pyt, "PytDtm")
+        date_text = ET.SubElement(pyt_dtm, "DateText",
+                               format="ddMMyy",
+                               functionCode="I-32")  
+        # Convertir la date au format ddMMyy
+        due_date = datetime.strptime(fi_data['due_date'], "%Y-%m-%d")
+        date_text.text = due_date.strftime("%d%m%y")
+    
+    # Ajout des informations sur l'institution financière
+    pyt_fii = ET.SubElement(pyt, "PytFii", functionCode="I-141") 
+    
+    # Ajout des informations sur le titulaire du compte
+    account_holder = ET.SubElement(pyt_fii, "AccountHolder")
+    ET.SubElement(account_holder, "AccountNumber").text = account_data['iban']
+    ET.SubElement(account_holder, "OwnerIdentifier").text = account_data['account_holder']
+    
+    # Ajout des informations sur l'institution financière
+    institution = ET.SubElement(pyt_fii, "InstitutionIdentification")
+    ET.SubElement(institution, "InstitutionName").text = account_data['financial_institution']
+    
+    # Ajout du code d'agence si fourni
+    if 'branch_code' in account_data and account_data['branch_code']:
+        ET.SubElement(institution, "BranchIdentifier").text = str(account_data['branch_code'])
+    
+    # Ajout des attributs personnalisés si fournis
     if 'attributes' in fi_data:
-        fii_attrs.update(fi_data['attributes'])
-    
-    pyt_fii = ET.SubElement(pyt_detail, "PytFii", **fii_attrs)
-    
-    # Add account information if available
-    if 'account' in fi_data and fi_data['account']:
-        account = fi_data['account']
-        holder = ET.SubElement(pyt_fii, "AccountHolder")
-        
-        if 'number' in account:
-            ET.SubElement(holder, "AccountNumber").text = str(account['number'])
-        if 'holder' in account:
-            ET.SubElement(holder, "OwnerIdentifier").text = str(account['holder'])
-    
-    # Add institution information if available
-    if 'institution' in fi_data and fi_data['institution']:
-        inst = fi_data['institution']
-        inst_attrs = {}
-        
-        if 'branch_code' in inst:
-            inst_attrs['nameCode'] = str(inst['branch_code'])
-        
-        inst_elem = ET.SubElement(pyt_fii, "InstitutionIdentification", **inst_attrs)
-        
-        if 'branch_code' in inst:
-            ET.SubElement(inst_elem, "BranchIdentifier").text = str(inst['branch_code'])
-        if 'name' in inst:
-            ET.SubElement(inst_elem, "InstitutionName").text = inst['name']
-    
-    # Add custom elements if any
-    if 'custom_elements' in fi_data:
-        for elem_name, elem_value in fi_data['custom_elements'].items():
-            if isinstance(elem_value, dict):
-                ET.SubElement(pyt_fii, elem_name, **elem_value)
-            else:
-                ET.SubElement(pyt_fii, elem_name).text = str(elem_value)
+        for key, value in fi_data['attributes'].items():
+            pyt_fii.set(key, str(value))
 
 # Add to __all__ to make it available for import
 __all__ = [

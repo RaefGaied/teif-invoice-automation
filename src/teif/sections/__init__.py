@@ -37,12 +37,7 @@ from .lines import (
     Quantity
 )  # noqa: F401
 from .amounts import (
-    create_amount_element,
-    create_tax_amount,
-    create_line_amount,
-    create_adjustment,
-    create_invoice_totals,
-    AmountsSection
+    add_invoice_moa
 )  # noqa: F401
 from .taxes import (
     add_tax_detail,
@@ -101,12 +96,7 @@ __all__ = [
     'Quantity',
     
     # amounts.py
-    'create_amount_element',
-    'create_tax_amount',
-    'create_line_amount',
-    'create_adjustment',
-    'create_invoice_totals',
-    'AmountsSection',
+    'add_invoice_moa',
     
     # taxes.py
     'add_tax_detail',

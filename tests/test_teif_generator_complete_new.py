@@ -123,15 +123,12 @@ def generate_complete_teif_invoice():
                 "currency": "TND",
                 "taxes": [
                     {
+                        "code": "I-1602",
                         "type_name": "TVA",
                         "category": "S",
-                        "details": [
-                            {
-                                "amount": 0.38,
-                                "rate": 19.0,
-                                "currency": "TND"
-                            }
-                        ]
+                        "rate": 19.0,
+                        "amount": 0.38,
+                        "currency": "TND"
                     }
                 ]
             },
@@ -153,15 +150,12 @@ def generate_complete_teif_invoice():
                 ],
                 "taxes": [
                     {
+                        "code": "I-1602",
                         "type_name": "TVA",
                         "category": "S",
-                        "details": [
-                            {
-                                "amount": 17.1,
-                                "rate": 19.0,
-                                "currency": "TND"
-                            }
-                        ]
+                        "rate": 19.0,
+                        "amount": 17.1,
+                        "currency": "TND"
                     }
                 ]
             },
@@ -176,15 +170,12 @@ def generate_complete_teif_invoice():
                 "currency": "TND",
                 "taxes": [
                     {
+                        "code": "I-1602",
                         "type_name": "TVA",
                         "category": "S",
-                        "details": [
-                            {
-                                "amount": 95.0,
-                                "rate": 19.0,
-                                "currency": "TND"
-                            }
-                        ]
+                        "rate": 19.0,
+                        "amount": 95.0,
+                        "currency": "TND"
                     }
                 ],
                 "sub_lines": [
@@ -210,45 +201,54 @@ def generate_complete_teif_invoice():
             }
         ],
         
-        # Invoice totals
+        # Tax information
+        "taxes": [
+            {
+                "code": "I-1602",  
+                "type_name": "TVA",
+                "category": "S",
+                "rate": 19.0,
+                "basis": 1000.0,  
+                "amount": 190.0,  
+                "currency": "TND"
+            },
+            {
+                "code": "I-1603",  
+                "type_name": "Droit de timbre",
+                "rate": 1.0,
+                "amount": 10.0,
+                "currency": "TND"
+            }
+        ],
+        
+        # Totals
         "totals": {
-            "currency": "TND",
-            "total_without_tax": 590.0,  
-            "total_tax": 112.1,          
-            "total_with_tax": 702.0,     
-            "line_extension_amount": 702.0,
-            "tax_exclusive_amount": 590.0,
-            "tax_inclusive_amount": 702.0,
-            "allowance_total_amount": 10.0,
-            "payable_amount": 702.0,
-            "taxes": [
-                {
-                    "type_name": "TVA",
-                    "category": "S",
-                    "rate": 19.0,
-                    "taxable_amount": 590.0,
-                    "amount": 112.1,
-                    "currency": "TND"
-                }
-            ]
+            "total_without_tax": 1000.0,
+            "total_tax": 200.0,
+            "total_with_tax": 1200.0,
+            "prepaid_amount": 600.0,
+            "due_amount": 600.0,
+            "currency": "TND"
         },
         
         # Payment terms
         "payment_terms": {
-            "type": "I-10",  
+            "code": "I-10",
             "description": "Paiement à 30 jours fin de mois",
-            "due_date": (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d"),
             "discount_percent": 2.0,
             "discount_due_date": (datetime.now() + timedelta(days=10)).strftime("%Y-%m-%d")
         },
         
         # Payment means
         "payment_means": {
-            "payment_means_code": "I-30",  
+            "payment_means_code": "I-30",
             "payment_id": "VIR-2023-001",
+            "due_date": (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d"),
             "payee_financial_account": {
                 "iban": "TN5904018104003691234567",
-                "financial_institution": "BNA"
+                "account_holder": "NOM_DU_TITULAIRE",
+                "financial_institution": "BNA",
+                "branch_code": "AGENCE_123"
             }
         },
         
@@ -377,39 +377,62 @@ def validate_lin_section(xml_root):
 def main():
     """Main function to generate and save the TEIF XML invoice."""
     try:
+        print("Début de la génération de la facture TEIF...")
+        
         # Create output directory if it doesn't exist
         os.makedirs('output', exist_ok=True)
         
         # Generate the invoice data
+        print("Génération des données de la facture...")
         invoice_data = generate_complete_teif_invoice()
         
         # Create TEIF generator instance
+        print("Création de l'instance TEIFGenerator...")
         generator = TEIFGenerator()
         
         # Generate the XML
-        xml_content = generator.generate_teif_xml(invoice_data)
+        print("Génération du XML...")
+        try:
+            xml_content = generator.generate_teif_xml(invoice_data)
+        except Exception as e:
+            print(f"Erreur lors de la génération du XML: {str(e)}")
+            print("Vérifiez que les données de signature sont correctement formatées.")
+            if hasattr(e, '__traceback__'):
+                import traceback
+                traceback.print_exc()
+            return 1
         
         # Save to file
         output_file = os.path.join('output', 'complete_invoice.xml')
-        with open(output_file, 'w', encoding='utf-8') as f:
-            f.write(xml_content)
-        
-        print(f"TEIF XML invoice has been generated successfully: {output_file}")
+        try:
+            with open(output_file, 'w', encoding='utf-8') as f:
+                f.write(xml_content)
+            print(f"Facture TEIF générée avec succès : {os.path.abspath(output_file)}")
+        except IOError as e:
+            print(f"Erreur lors de l'écriture du fichier {output_file}: {str(e)}")
+            return 1
         
         # Validate the LinSection
         try:
+            print("Validation de la section Lin...")
             root = ET.fromstring(xml_content.encode('utf-8'))
             if validate_lin_section(root):
-                print("LinSection validation: PASSED")
+                print("✓ Validation de la section Lin réussie")
             else:
-                print("LinSection validation: FAILED")
+                print("✗ Erreur de validation de la section Lin")
+        except ET.ParseError as e:
+            print(f"Erreur d'analyse XML: {str(e)}")
+            return 1
         except Exception as e:
-            print(f"Error during validation: {str(e)}")
+            print(f"Erreur lors de la validation: {str(e)}")
+            return 1
         
         return 0
         
     except Exception as e:
-        print(f"Error generating TEIF XML: {str(e)}")
+        print(f"ERREUR: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return 1
 
 

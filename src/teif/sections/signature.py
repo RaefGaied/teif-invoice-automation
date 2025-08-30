@@ -15,19 +15,140 @@ from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from cryptography.hazmat.backends import default_backend
 import copy
+import os
+import uuid
 
 
 class SignatureSection:
     """
-    A class to handle electronic signatures in TEIF documents.
-    
-    This class provides methods to create and manage digital signatures
-    according to the TEIF 1.8.8 standard.
+    Represents a signature section in a TEIF document with XAdES support.
     """
     
     def __init__(self):
         """Initialize a new SignatureSection instance."""
         self.signatures = []
+        
+        # Register namespaces
+        ET.register_namespace('ds', 'http://www.w3.org/2000/09/xmldsig#')
+        ET.register_namespace('xades', 'http://uri.etsi.org/01903/v1.3.2#')
+    
+    def _create_reference(self, parent, uri='', transforms=None):
+        """Create a Reference element."""
+        ref = ET.SubElement(parent, '{http://www.w3.org/2000/09/xmldsig#}Reference')
+        if uri:
+            ref.set('URI', uri)
+        
+        # Add transforms if provided
+        if transforms:
+            transforms_elem = ET.SubElement(ref, 'Transforms')
+            for transform in transforms:
+                tf = ET.SubElement(transforms_elem, 'Transform', 
+                                 Algorithm=transform['algorithm'])
+                if 'xpath' in transform:
+                    ET.SubElement(tf, 'XPath').text = transform['xpath']
+        
+        # Default digest method
+        ET.SubElement(ref, 'DigestMethod', 
+                     Algorithm='http://www.w3.org/2001/04/xmlenc#sha256')
+        ET.SubElement(ref, 'DigestValue').text = ''  # Will be calculated during signing
+        
+        return ref
+    
+    def _create_signed_properties(self, parent, sig_id):
+        """Create XAdES SignedProperties."""
+        qualifying_props = ET.SubElement(
+            parent, 
+            '{http://uri.etsi.org/01903/v1.3.2#}QualifyingProperties',
+            {'Target': f"#{sig_id}"}
+        )
+        
+        signed_props = ET.SubElement(
+            qualifying_props,
+            '{http://uri.etsi.org/01903/v1.3.2#}SignedProperties',
+            {'Id': f"xades-{sig_id}"}
+        )
+        
+        # Add basic signed signature properties
+        sig_props = ET.SubElement(
+            signed_props,
+            '{http://uri.etsi.org/01903/v1.3.2#}SignedSignatureProperties'
+        )
+        
+        # Signing time
+        ET.SubElement(
+            sig_props,
+            '{http://uri.etsi.org/01903/v1.3.2#}SigningTime'
+        ).text = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
+        
+        return qualifying_props
+    
+    def _create_signature_element(self, sig_data: Dict[str, Any]) -> ET.Element:
+        """Create a complete XAdES signature element."""
+        sig_id = sig_data.get('id', f'sig-{uuid.uuid4()}')
+        
+        # Create Signature element
+        signature = ET.Element(
+            '{http://www.w3.org/2000/09/xmldsig#}Signature',
+            {'Id': sig_id}
+        )
+        
+        # Create SignedInfo
+        signed_info = ET.SubElement(signature, 'SignedInfo')
+        
+        # Add canonicalization method
+        ET.SubElement(
+            signed_info,
+            'CanonicalizationMethod',
+            Algorithm='http://www.w3.org/2001/10/xml-exc-c14n#'
+        )
+        
+        # Add signature method
+        ET.SubElement(
+            signed_info,
+            'SignatureMethod',
+            Algorithm='http://www.w3.org/2001/04/xmldsig-more#rsa-sha256'
+        )
+        
+        # Add reference to the signed content
+        ref = self._create_reference(
+            signed_info,
+            transforms=[
+                {
+                    'algorithm': 'http://www.w3.org/TR/1999/REC-xpath-19991116',
+                    'xpath': 'not(ancestor-or-self::ds:Signature)'
+                },
+                {
+                    'algorithm': 'http://www.w3.org/2001/10/xml-exc-c14n#'
+                }
+            ]
+        )
+        
+        # Add reference to the XAdES signed properties
+        ref = self._create_reference(
+            signed_info,
+            uri=f"#xades-{sig_id}",
+            transforms=[
+                {'algorithm': 'http://www.w3.org/2001/10/xml-exc-c14n#'}
+            ]
+        )
+        ref.set('Type', 'http://uri.etsi.org/01903#SignedProperties')
+        
+        # Add SignatureValue (placeholder)
+        ET.SubElement(
+            signature,
+            'SignatureValue',
+            {'Id': f'value-{sig_id}'}
+        ).text = sig_data.get('signature_value', '')
+        
+        # Add KeyInfo with certificate
+        key_info = ET.SubElement(signature, 'KeyInfo')
+        x509_data = ET.SubElement(key_info, 'X509Data')
+        ET.SubElement(x509_data, 'X509Certificate').text = sig_data.get('cert_data', '')
+        
+        # Add XAdES qualifying properties
+        self._create_signed_properties(signature, sig_id)
+        
+        return signature
     
     def add_signature(self,
                      cert_data: Union[str, bytes],
@@ -38,33 +159,54 @@ class SignatureSection:
                      name: Optional[str] = None,
                      date: Optional[Union[str, datetime]] = None) -> None:
         """
-        Add a signature to the section.
+        Add a signature to the section with XAdES support.
         
         Args:
-            cert_data: Path to certificate file or certificate data
-            key_data: Path to private key file or key data (optional)
+            cert_data: Certificate data in PEM format or path to certificate file
+            key_data: Private key data or path to key file (optional)
             key_password: Password for the private key (optional)
-            signature_id: Unique identifier for the signature (optional)
-            role: Role of the signer (optional)
-            name: Name of the signer (optional)
-            date: Signature date (optional, default: now)
+            signature_id: Unique identifier for the signature
+            role: Role of the signer
+            name: Name of the signer
+            date: Signature date (default: current time)
         """
-        self.signatures.append({
-            'cert_data': cert_data,
-            'key_data': key_data,
-            'key_password': key_password,
-            'signature_id': signature_id,
-            'role': role,
-            'name': name,
-            'date': date or datetime.now()
-        })
+        try:
+            # Load certificate data
+            if isinstance(cert_data, str) and os.path.isfile(cert_data):
+                with open(cert_data, 'r', encoding='utf-8') as f:
+                    cert_content = f.read()
+            else:
+                cert_content = cert_data
+            
+            # Clean certificate content
+            if '-----BEGIN CERTIFICATE-----' in cert_content:
+                cert_content = '\n'.join(
+                    line.strip()
+                    for line in cert_content.split('\n')
+                    if line.strip() and not line.strip().startswith('---')
+                )
+            
+            # Store signature data
+            self.signatures.append({
+                'id': signature_id or f'sig-{uuid.uuid4()}',
+                'cert_data': cert_content,
+                'key_data': key_data,
+                'key_password': key_password,
+                'role': role,
+                'name': name,
+                'date': date or datetime.utcnow(),
+                'signature_value': '[SIGNATURE VALUE]'  # Placeholder
+            })
+            
+        except Exception as e:
+            raise SignatureError(f"Failed to add signature: {str(e)}")
     
-    def to_xml(self, parent: ET.Element = None) -> ET.Element:
+    def to_xml(self, parent: Optional[ET.Element] = None) -> ET.Element:
         """
         Generate the XML representation of the signature section.
         
         Args:
-            parent: The parent XML element. If None, creates a new root element.
+            parent: Parent element. If None, creates a new root element.
             
         Returns:
             ET.Element: The generated XML element
@@ -74,69 +216,12 @@ class SignatureSection:
         else:
             signature_section = ET.SubElement(parent, 'SignatureSection')
         
-        for sig in self.signatures:
-            self._add_signature_element(signature_section, sig)
+        # Add each signature
+        for sig_data in self.signatures:
+            signature = self._create_signature_element(sig_data)
+            signature_section.append(signature)
         
         return signature_section
-    
-    def _add_signature_element(self, parent: ET.Element, sig_data: Dict[str, Any]) -> None:
-        """Helper method to add a signature element."""
-        try:
-            # Create signature element
-            signature = ET.SubElement(parent, 'Signature')
-            
-            # Add signature ID if provided
-            if 'signature_id' in sig_data and sig_data['signature_id']:
-                signature.set('Id', str(sig_data['signature_id']))
-            
-            # Add signature type
-            signature_type = ET.SubElement(signature, 'SignatureType')
-            signature_type.text = 'XAdES'  # Default to XAdES
-            
-            # Add signature date
-            date = sig_data.get('date', datetime.now())
-            if isinstance(date, datetime):
-                date = date.strftime('%Y-%m-%dT%H:%M:%SZ')
-            
-            date_elem = ET.SubElement(signature, 'SignatureDate')
-            date_elem.text = str(date)
-            
-            # Add signer information if available
-            if 'name' in sig_data and sig_data['name']:
-                signer = ET.SubElement(signature, 'Signer')
-                
-                # Add signer name
-                name_elem = ET.SubElement(signer, 'Name')
-                name_elem.text = str(sig_data['name'])
-                
-                # Add signer role if provided
-                if 'role' in sig_data and sig_data['role']:
-                    role_elem = ET.SubElement(signer, 'Role')
-                    role_elem.text = str(sig_data['role'])
-            
-            # Add certificate information
-            cert_data = sig_data['cert_data']
-            if isinstance(cert_data, str) and cert_data.startswith('-----BEGIN CERTIFICATE-----'):
-                # Certificate is already in PEM format
-                cert_pem = cert_data
-            else:
-                # Load certificate from file
-                with open(cert_data, 'rb') as f:
-                    cert_pem = f.read()
-            
-            # Add certificate data
-            cert_elem = ET.SubElement(signature, 'Certificate')
-            # Remove headers and newlines for storage
-            cert_data = '\n'.join(line.strip() for line in cert_pem.split('\n')
-                                 if line.strip() and not line.startswith('-----') and not line.endswith('-----'))
-            cert_elem.text = cert_data
-            
-            # Add signature value (placeholder, actual signing would be done here)
-            sig_value = ET.SubElement(signature, 'SignatureValue')
-            sig_value.text = '[SIGNATURE VALUE]'  # Placeholder
-            
-        except Exception as e:
-            raise SignatureError(f"Failed to create signature: {str(e)}")
 
 
 class SignatureError(Exception):
@@ -276,15 +361,41 @@ def add_signature(
 
 
 def _load_certificate(cert_data: str) -> crypto.X509:
-    """Charge un certificat à partir d'un fichier ou de données brutes."""
+    """
+    Charge un certificat à partir d'un fichier ou de données brutes.
+    
+    Args:
+        cert_data: Chemin vers le fichier de certificat ou données PEM du certificat
+        
+    Returns:
+        Un objet X509 contenant le certificat chargé
+        
+    Raises:
+        SignatureError: Si le certificat ne peut pas être chargé
+    """
     try:
-        if '-----BEGIN CERTIFICATE-----' in cert_data:
-            # Données PEM
-            return crypto.load_certificate(crypto.FILETYPE_PEM, cert_data.encode())
+        # Vérifier si les données contiennent un en-tête PEM
+        if '-----BEGIN CERTIFICATE-----' in cert_data or '-----BEGIN CERTIFICATE-----' in cert_data.upper():
+            # Nettoyer les données PEM (supprimer les espaces et retours à la ligne en trop)
+            cert_data = '\n'.join(line.strip() for line in cert_data.split('\n') if line.strip())
+            # S'assurer que l'en-tête et le pied de page sont corrects
+            if not cert_data.startswith('-----BEGIN CERTIFICATE-----'):
+                cert_data = '-----BEGIN CERTIFICATE-----\n' + cert_data
+            if not cert_data.endswith('-----END CERTIFICATE-----'):
+                cert_data = cert_data + '\n-----END CERTIFICATE-----'
+            # Charger le certificat à partir des données PEM
+            return crypto.load_certificate(crypto.FILETYPE_PEM, cert_data.encode('utf-8'))
         else:
-            # Fichier
-            with open(cert_data, 'rb') as f:
-                return crypto.load_certificate(crypto.FILETYPE_PEM, f.read())
+            # Essayer de charger à partir d'un fichier
+            try:
+                with open(cert_data, 'rb') as f:
+                    return crypto.load_certificate(crypto.FILETYPE_PEM, f.read())
+            except (IOError, OSError):
+                # Si le chargement du fichier échoue, essayer de tracer directement comme PEM
+                try:
+                    return crypto.load_certificate(crypto.FILETYPE_PEM, cert_data.encode('utf-8'))
+                except Exception:
+                    raise SignatureError("Format de certificat non reconnu. Doit être un fichier PEM ou une chaîne PEM valide.")
     except Exception as e:
         raise SignatureError(f"Impossible de charger le certificat: {str(e)}")
 

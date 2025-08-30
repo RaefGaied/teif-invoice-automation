@@ -64,8 +64,6 @@ class TaxesSection:
         Raises:
             ValueError: If tax data is invalid
         """
-        from .amounts import create_amount_element
-        
         # Validation des champs obligatoires
         required_fields = ['code', 'rate', 'amount', 'taxable_amount']
         missing_fields = [field for field in required_fields if field not in tax_data]
@@ -102,21 +100,26 @@ class TaxesSection:
             exemption = ET.SubElement(tax, 'TaxExemptionReason')
             exemption.text = str(tax_data['exemption_reason'])
         
+        # Créer l'élément Moa pour les montants
+        moa = ET.SubElement(tax, 'Moa', amountTypeCode='TOTAL_TAX')
+        
         # Ajouter le montant de la taxe
-        amount_data = {
-            'amount': tax_data['amount'],
-            'amount_type': 'I-1603',  # Montant de la taxe
-            'currency': tax_data.get('currency', self.currency)
-        }
-        create_amount_element(tax, amount_data)
+        amount = ET.SubElement(moa, 'Amount')
+        amount.set('currencyIdentifier', tax_data.get('currency', self.currency))
+        amount.text = str(tax_data['amount'])
+        
+        # Ajouter la description du montant
+        desc = ET.SubElement(moa, 'AmountDescription', lang='FR')
+        desc.text = 'Montant de la taxe'
         
         # Ajouter le montant taxable
-        taxable_data = {
-            'amount': tax_data['taxable_amount'],
-            'amount_type': 'I-1601',  # Montant taxable
-            'currency': tax_data.get('currency', self.currency)
-        }
-        create_amount_element(tax, taxable_data)
+        taxable_moa = ET.SubElement(tax, 'Moa', amountTypeCode='TAXABLE_AMOUNT')
+        taxable_amount = ET.SubElement(taxable_moa, 'Amount')
+        taxable_amount.set('currencyIdentifier', tax_data.get('currency', self.currency))
+        taxable_amount.text = str(tax_data['taxable_amount'])
+        
+        taxable_desc = ET.SubElement(taxable_moa, 'AmountDescription', lang='FR')
+        taxable_desc.text = 'Montant taxable'
     
     def to_xml(self, parent: ET.Element = None) -> ET.Element:
         """
@@ -214,6 +217,69 @@ def add_tax_detail(parent: ET.Element, tax_data: Dict[str, Any], currency: str =
         raise ValueError(f"Format de données de taxe invalide: {str(e)}")
 
 def add_invoice_tax_section(parent: ET.Element, tax_data: Dict[str, Any], currency: str = 'TND') -> None:
+    """
+    Ajoute une section de taxe à la facture selon le standard TEIF 1.8.8.
+    
+    Args:
+        parent: L'élément parent XML (InvoiceBody)
+        tax_data: Dictionnaire contenant les informations de taxe
+            - code: Code de taxe (obligatoire, selon le référentiel I16)
+            - type_name: Nom du type de taxe (obligatoire, max 35 caractères)
+            - category: Catégorie de taxe (optionnel, max 6 caractères)
+            - rate: Taux de taxe (obligatoire)
+            - basis: Base de calcul de la taxe (optionnel)
+            - amount: Montant de la taxe (obligatoire)
+            - currency: Code devise (optionnel, défaut: 'TND')
+    """
+    if not tax_data or 'code' not in tax_data or 'type_name' not in tax_data or 'rate' not in tax_data or 'amount' not in tax_data:
+        return
+    
+    # Créer l'élément InvoiceTax
+    invoice_tax = ET.SubElement(parent, 'InvoiceTax')
+    
+    # Créer la section des détails de taxe
+    tax_details = ET.SubElement(invoice_tax, 'InvoiceTaxDetails')
+    
+    # Créer l'élément Tax
+    tax = ET.SubElement(tax_details, 'Tax')
+    
+    # Ajouter le type de taxe avec son code
+    tax_type = ET.SubElement(tax, 'TaxTypeName', code=str(tax_data['code']))
+    tax_type.text = str(tax_data['type_name'])[:35]  # Limité à 35 caractères
+    
+    # Ajouter la catégorie de taxe si fournie
+    if 'category' in tax_data and tax_data['category']:
+        category = ET.SubElement(tax, 'TaxCategory')
+        category.text = str(tax_data['category'])[:6]  # Limité à 6 caractères
+    
+    # Ajouter les détails de la taxe (taux et base de calcul)
+    tax_details_elem = ET.SubElement(tax, 'TaxDetails')
+    
+    # Taux de taxe
+    rate = ET.SubElement(tax_details_elem, 'TaxRate')
+    rate.text = str(tax_data['rate'])
+    
+    # Base de calcul si fournie
+    if 'basis' in tax_data and tax_data['basis'] is not None:
+        basis = ET.SubElement(tax_details_elem, 'TaxRateBasis')
+        basis.text = str(tax_data['basis'])
+    
+    # Créer la section des montants
+    amount_details = ET.SubElement(tax, 'AmountDetails')
+    
+    # Ajouter le montant de la taxe
+    moa = ET.SubElement(amount_details, 'Moa', amountTypeCode='TAX_AMOUNT')
+    
+    # Montant de la taxe
+    amount = ET.SubElement(moa, 'Amount')
+    amount.set('currencyIdentifier', tax_data.get('currency', currency))
+    amount.text = str(tax_data['amount'])
+    
+    # Description du montant
+    desc = ET.SubElement(moa, 'AmountDescription', lang='FR')
+    desc.text = 'Montant de la taxe'
+
+def add_invoice_tax_section_old(parent: ET.Element, tax_data: Dict[str, Any], currency: str = 'TND') -> None:
     """
     Ajoute une section de taxe à la facture.
     
