@@ -3,119 +3,601 @@ Module pour la gestion des signatures électroniques TEIF.
 """
 from typing import Dict, Any, Optional, List, Union, Tuple, cast
 import xml.etree.ElementTree as ET
+from OpenSSL import crypto
 from datetime import datetime, timezone
 import base64
 import hashlib
-import re
-from lxml import etree
-from OpenSSL import crypto
-from lxml.etree import _Element as Element  # type: ignore
+import uuid
 from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import padding
-from cryptography.hazmat.primitives.serialization import load_pem_private_key
+from cryptography.hazmat.primitives.serialization import pkcs7, load_pem_private_key
+from cryptography.x509 import load_pem_x509_certificate
 from cryptography.hazmat.backends import default_backend
 import copy
 import os
-import uuid
+import xml.etree.ElementTree as ET
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import padding, rsa, utils
+from cryptography.hazmat.primitives.serialization import load_pem_private_key, load_pem_public_key
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+from cryptography.x509 import load_pem_x509_certificate
+import logging
+from lxml import etree
 
+# Initialize logger
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# XML Namespaces
+NSMAP = {
+    'ds': 'http://www.w3.org/2000/09/xmldsig#',
+    'xades': 'http://uri.etsi.org/01903/v1.3.2#',
+    'xsi': 'http://www.w3.org/2001/XMLSchema-instance',
+    'xsd': 'http://www.w3.org/2001/XMLSchema',
+    'ubl': 'urn:oasis:names:specification:ubl:schema:xsd:Invoice-2',
+}
+
+# Constants for namespace URIs
+DS_NS = NSMAP['ds']
+XADES_NS = NSMAP['xades']
+XSI_NS = NSMAP['xsi']
+XSD_NS = NSMAP['xsd']
+UBL_NS = NSMAP['ubl']
+
+# Algorithmes et URLs
+CANONICALIZATION_METHOD = 'http://www.w3.org/2001/10/xml-exc-c14n#'
+SIGNATURE_METHOD = 'http://www.w3.org/2001/04/xmldsig-more#rsa-sha256'
+DIGEST_METHOD = 'http://www.w3.org/2001/04/xmlenc#sha256'
+QUALIFYING_PROPERTIES = f"{{{XADES_NS}}}QualifyingProperties"
+SIGNED_PROPERTIES = f"{{{XADES_NS}}}SignedProperties"
+SIGNING_CERTIFICATE = f"{{{XADES_NS}}}SigningCertificate"
+CERT = f"{{{XADES_NS}}}Cert"
+CERT_DIGEST = f"{{{XADES_NS}}}CertDigest"
+SIGNING_TIME = f"{{{XADES_NS}}}SigningTime"
+SIGNATURE_POLICY_IDENTIFIER = f"{{{XADES_NS}}}SignaturePolicyIdentifier"
+SIGNATURE_POLICY_ID = f"{{{XADES_NS}}}SignaturePolicyId"
+SIG_POLICY_ID = f"{{{XADES_NS}}}SigPolicyId"
+IDENTIFIER = f"{{{XADES_NS}}}Identifier"
+DESCRIPTION = f"{{{XADES_NS}}}Description"
+SIGNER_ROLE = f"{{{XADES_NS}}}SignerRole"
+CLAIMED_ROLES = f"{{{XADES_NS}}}ClaimedRoles"
+CLAIMED_ROLE = f"{{{XADES_NS}}}ClaimedRole"
 
 class SignatureSection:
-    """
-    Represents a signature section in a TEIF document with XAdES support.
-    """
+    """Classe pour gérer les signatures électroniques XAdES-B selon les spécifications d'El Fatoora."""
     
     def __init__(self):
-        """Initialize a new SignatureSection instance."""
+        """Initialise une nouvelle instance de SignatureSection."""
         self.signatures = []
-        
-        # Register namespaces
-        ET.register_namespace('ds', 'http://www.w3.org/2000/09/xmldsig#')
-        ET.register_namespace('xades', 'http://uri.etsi.org/01903/v1.3.2#')
+        self._register_namespaces()
     
-    def _create_reference(self, parent, uri='', transforms=None):
-        """Create a Reference element."""
-        ref = ET.SubElement(parent, '{http://www.w3.org/2000/09/xmldsig#}Reference')
+    def _register_namespaces(self):
+        """Enregistre les espaces de noms XML utilisés."""
+        # Namespaces are handled at the root level in xml.etree
+        pass
+    
+    def _create_reference(self, parent, uri='', transforms=None, reference_id=None):
+        """
+        Crée un élément Reference avec les transformations spécifiées.
+        
+        Args:
+            parent: L'élément parent XML
+            uri: URI de la référence
+            transforms: Liste des transformations à appliquer
+            reference_id: ID de la référence
+            
+        Returns:
+            L'élément Reference créé
+        """
+        ref = etree.SubElement(parent, f'{{{DS_NS}}}Reference')
         if uri:
             ref.set('URI', uri)
+        if reference_id:
+            ref.set('Id', reference_id)
         
-        # Add transforms if provided
+        # Ajouter les transformations
         if transforms:
-            transforms_elem = ET.SubElement(ref, 'Transforms')
+            transforms_elem = etree.SubElement(ref, f'{{{DS_NS}}}Transforms')
             for transform in transforms:
-                tf = ET.SubElement(transforms_elem, 'Transform', 
-                                 Algorithm=transform['algorithm'])
+                tf = etree.SubElement(
+                    transforms_elem, 
+                    f'{{{DS_NS}}}Transform',
+                    Algorithm=transform['algorithm']
+                )
                 if 'xpath' in transform:
-                    ET.SubElement(tf, 'XPath').text = transform['xpath']
+                    xpath = etree.SubElement(tf, f'{{{DS_NS}}}XPath')
+                    xpath.text = transform['xpath']
         
-        # Default digest method
-        ET.SubElement(ref, 'DigestMethod', 
-                     Algorithm='http://www.w3.org/2001/04/xmlenc#sha256')
-        ET.SubElement(ref, 'DigestValue').text = ''  # Will be calculated during signing
+        # Ajouter la méthode de hachage
+        etree.SubElement(
+            ref, 
+            f'{{{DS_NS}}}DigestMethod',
+            Algorithm=DIGEST_METHOD
+        )
+        
+        # La valeur de hachage sera calculée plus tard
+        etree.SubElement(ref, f'{{{DS_NS}}}DigestValue')
         
         return ref
     
-    def _create_signed_properties(self, parent, sig_id):
-        """Create XAdES SignedProperties."""
-        qualifying_props = ET.SubElement(
-            parent, 
-            '{http://uri.etsi.org/01903/v1.3.2#}QualifyingProperties',
-            {'Target': f"#{sig_id}"}
+    def _create_signed_properties(self, parent, sig_id, role=None, name=None):
+        """
+        Crée les propriétés XAdES signées.
+        
+        Args:
+            parent: L'élément parent XML
+            sig_id: ID de la signature
+            role: Rôle du signataire (optionnel)
+            name: Nom du signataire (optionnel)
+        """
+        # Créer l'élément Object pour les propriétés XAdES
+        obj = etree.SubElement(parent, f'{{{DS_NS}}}Object')
+        
+        # Créer l'élément QualifyingProperties
+        qualifying_props = etree.SubElement(
+            obj,
+            f'{{{XADES_NS}}}QualifyingProperties',
+            {
+                'Target': f'#{sig_id}'
+            }
         )
         
-        signed_props = ET.SubElement(
+        # Créer l'élément SignedProperties
+        signed_props = etree.SubElement(
             qualifying_props,
-            '{http://uri.etsi.org/01903/v1.3.2#}SignedProperties',
-            {'Id': f"xades-{sig_id}"}
+            f'{{{XADES_NS}}}SignedProperties',
+            {
+                'Id': f'xades-{sig_id}'
+            }
         )
         
-        # Add basic signed signature properties
-        sig_props = ET.SubElement(
+        # Créer l'élément SignedSignatureProperties
+        sig_props = etree.SubElement(
             signed_props,
-            '{http://uri.etsi.org/01903/v1.3.2#}SignedSignatureProperties'
+            f'{{{XADES_NS}}}SignedSignatureProperties'
         )
         
-        # Signing time
-        ET.SubElement(
+        # Ajouter l'horodatage de signature
+        signing_time = etree.SubElement(
             sig_props,
-            '{http://uri.etsi.org/01903/v1.3.2#}SigningTime'
-        ).text = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
+            f'{{{XADES_NS}}}SigningTime'
+        )
+        signing_time.text = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
         
-        return qualifying_props
+        # Ajouter la politique de signature
+        sig_policy = etree.SubElement(
+            sig_props,
+            f'{{{XADES_NS}}}SignaturePolicyIdentifier'
+        )
+        sig_policy_id = etree.SubElement(
+            sig_policy,
+            f'{{{XADES_NS}}}SignaturePolicyId'
+        )
+        
+        # Identifier de la politique
+        sig_policy_id_el = etree.SubElement(
+            sig_policy_id,
+            f'{{{XADES_NS}}}SigPolicyId'
+        )
+        etree.SubElement(
+            sig_policy_id_el,
+            f'{{{XADES_NS}}}Identifier'
+        ).text = 'urn:oid:1.3.6.1.4.1.311.10.1.1'
+        
+        # Hachage de la politique
+        sig_policy_hash = etree.SubElement(
+            sig_policy_id,
+            f'{{{XADES_NS}}}SigPolicyHash'
+        )
+        etree.SubElement(
+            sig_policy_hash,
+            f'{{{DS_NS}}}DigestMethod',
+            Algorithm='http://www.w3.org/2001/04/xmlenc#sha256'
+        )
+        etree.SubElement(
+            sig_policy_hash,
+            f'{{{DS_NS}}}DigestValue'
+        ).text = '3J1oMkha+OAlm9hBNCcAS+/nbKokG8Gf9N3XPipP7yg='
+        
+        # Qualifieurs de la politique
+        sig_policy_qualifiers = etree.SubElement(
+            sig_policy_id,
+            f'{{{XADES_NS}}}SigPolicyQualifiers'
+        )
+        sig_policy_qualifier = etree.SubElement(
+            sig_policy_qualifiers,
+            f'{{{XADES_NS}}}SigPolicyQualifier'
+        )
+        etree.SubElement(
+            sig_policy_qualifier,
+            f'{{{XADES_NS}}}SPURI'
+        ).text = 'http://www.tradenet.com.tn/portal/telechargerTelechargement?lien=Politique_de_Signature_de_la_facture_electronique.pdf'
+        
+        # Rôle du signataire
+        if role or name:
+            signer_role = etree.SubElement(
+                sig_props,
+                f'{{{XADES_NS}}}SignerRole'
+            )
+            claimed_roles = etree.SubElement(
+                signer_role,
+                f'{{{XADES_NS}}}ClaimedRoles'
+            )
+            if role:
+                etree.SubElement(
+                    claimed_roles,
+                    f'{{{XADES_NS}}}ClaimedRole'
+                ).text = role
+            if name:
+                etree.SubElement(
+                    claimed_roles,
+                    f'{{{XADES_NS}}}ClaimedRole'
+                ).text = name
+        
+        # SignedDataObjectProperties
+        data_obj_props = etree.SubElement(
+            signed_props,
+            f'{{{XADES_NS}}}SignedDataObjectProperties'
+        )
+        
+        # DataObjectFormat pour la signature
+        data_obj_format = etree.SubElement(
+            data_obj_props,
+            f'{{{XADES_NS}}}DataObjectFormat',
+            ObjectReference=f'#r-id-{sig_id}'
+        )
+        etree.SubElement(
+            data_obj_format,
+            f'{{{XADES_NS}}}MimeType'
+        ).text = 'text/xml'
+        etree.SubElement(
+            data_obj_format,
+            f'{{{XADES_NS}}}Encoding'
+        ).text = 'UTF-8'
+    
+    def _calculate_digest(self, element, transforms=None):
+        """
+        Calcule le hachage d'un élément XML après application des transformations.
+        
+        Args:
+            element: L'élément XML à hacher
+            transforms: Liste des transformations à appliquer
+            
+        Returns:
+            Tuple (données canonisées, hachage en base64)
+        """
+        # Faire une copie profonde pour éviter de modifier l'original
+        element_copy = copy.deepcopy(element)
+        
+        # Appliquer les transformations dans l'ordre
+        if transforms:
+            for transform in transforms:
+                if transform['algorithm'] == 'http://www.w3.org/TR/1999/REC-xpath-19991116':
+                    # Implémenter la transformation XPath
+                    xpath_expr = transform.get('xpath', '')
+                    if 'not(ancestor-or-self::ds:Signature)' in xpath_expr:
+                        # Exclure l'élément Signature
+                        for sig in element_copy.xpath('//ds:Signature', namespaces={'ds': DS_NS}):
+                            sig.getparent().remove(sig)
+                    elif 'not(ancestor-or-self::RefTtnVal)' in xpath_expr:
+                        # Exclure l'élément RefTtnVal
+                        for ref in element_copy.xpath('//RefTtnVal'):
+                            ref.getparent().remove(ref)
+        
+        # Canonicaliser l'élément selon XML-Exc-C14N
+        canonicalized = etree.tostring(
+            element_copy,
+            method='c14n',
+            exclusive=True,
+            with_comments=False,
+            inclusive_ns_prefixes=None
+        )
+        
+        # Calculer le hachage SHA-256
+        digest = hashlib.sha256(canonicalized).digest()
+        return canonicalized, base64.b64encode(digest).decode('utf-8')
+    
+    def _sign_data(
+        self,
+        data: bytes,
+        private_key_data: Union[bytes, str, crypto.PKey, Any],
+        password: Optional[Union[str, bytes]] = None
+    ) -> bytes:
+        """
+        Sign data with a private key.
+
+        Args:
+            data: The data to be signed
+            private_key_data: Private key as bytes, string, crypto.PKey, or loaded key object
+            password: Optional password if the key is encrypted
+
+        Returns:
+            The signature as bytes
+
+        Raises:
+            SignatureError: If there's an error during signing
+        """
+        try:
+            from cryptography.hazmat.primitives.asymmetric import padding
+            from cryptography.hazmat.primitives import hashes
+            from cryptography.hazmat.primitives.serialization import load_pem_private_key
+            
+            # If it's already a loaded key object (from _load_private_key)
+            if hasattr(private_key_data, 'sign'):
+                key = private_key_data
+            # If it's a crypto.PKey
+            elif isinstance(private_key_data, crypto.PKey):
+                key_pem = crypto.dump_privatekey(crypto.FILETYPE_PEM, private_key_data)
+                key = load_pem_private_key(
+                    key_pem,
+                    password=None,
+                    backend=default_backend()
+                )
+            # If it's a string or bytes
+            elif isinstance(private_key_data, (str, bytes)):
+                if isinstance(private_key_data, str):
+                    if os.path.isfile(private_key_data):
+                        with open(private_key_data, "rb") as f:
+                            key_data = f.read()
+                    else:
+                        key_data = private_key_data.encode("utf-8")
+                
+                if isinstance(password, str):
+                    password = password.encode("utf-8")
+
+                key = load_pem_private_key(
+                    key_data,
+                    password=password,
+                    backend=default_backend()
+                )
+            else:
+                raise ValueError(f"Unsupported private key type: {type(private_key_data)}")
+
+            # Sign the data
+            signature = key.sign(
+                data,
+                padding.PKCS1v15(),
+                hashes.SHA256()
+            )
+
+            return signature
+
+        except Exception as e:
+            raise SignatureError(f"Erreur lors de la signature des données: {str(e)}")
+    
+    def _update_digest_values(self, signature_element: ET.Element, sig_data: Dict[str, Any]) -> None:
+        """
+        Met à jour les valeurs de hachage dans l'élément de signature.
+        
+        Args:
+            signature_element: L'élément de signature à mettre à jour
+            sig_data: Données de la signature
+        """
+        # Mettre à jour les valeurs de hachage
+        signed_info = signature_element.find('.//ds:SignedInfo', namespaces={'ds': DS_NS})
+        
+        # Pour chaque référence dans SignedInfo
+        for ref in signed_info.findall('ds:Reference', namespaces={'ds': DS_NS}):
+            uri = ref.get('URI', '')
+            
+            # Skip if this is not a reference to signed properties
+            if not uri.startswith('#'):
+                continue
+                
+            # Find the referenced element
+            ref_id = uri[1:]
+            referenced_element = signature_element.find(f".//*[@Id='{ref_id}']")
+            
+            if referenced_element is not None:
+                # Compute digest
+                digest = self._compute_digest(referenced_element)
+                digest_b64 = base64.b64encode(digest).decode('ascii')
+                
+                # Update DigestValue
+                digest_value = ref.find('ds:DigestValue', namespaces={'ds': DS_NS})
+                if digest_value is not None:
+                    digest_value.text = digest_b64
+    
+    def _compute_digest(self, node: ET.Element, digest_method: str = DIGEST_METHOD) -> bytes:
+        """
+        Compute the digest of an XML node after canonicalization.
+        
+        Args:
+            node: The XML element to compute digest for
+            digest_method: The digest method URI
+            
+        Returns:
+            The computed digest as bytes
+        """
+        try:
+            # Convert node to string
+            node_str = etree.tostring(node, encoding='utf-8', method='xml')
+            
+            # For XAdES, we need to use exclusive XML canonicalization
+            parser = etree.XMLParser(remove_blank_text=True)
+            doc = etree.fromstring(node_str, parser=parser)
+            
+            # Apply exclusive canonicalization using lxml's c14n method
+            c14n = etree.tostring(
+                doc,
+                method='c14n',
+                exclusive=True,
+                with_comments=False,
+                inclusive_ns_prefixes=None
+            )
+            
+            # Compute digest
+            if digest_method == DIGEST_METHOD:  # SHA-256
+                digest = hashlib.sha256(c14n).digest()
+            else:
+                raise ValueError(f"Unsupported digest method: {digest_method}")
+                
+            return digest
+            
+        except Exception as e:
+            logger.error(f"Error in _compute_digest: {str(e)}")
+            raise SignatureError(f"Failed to compute digest: {str(e)}")
+    
+    def _sign_document(self, signature: ET.Element, key_data: bytes, key_password: Optional[str] = None) -> None:
+        """
+        Sign the document by computing and setting the digest values and signature.
+        
+        Args:
+            signature: The signature element to sign
+            key_data: The private key data in PEM format
+            key_password: Optional password for the private key
+        """
+        try:
+            # 1. Find all references that need digest computation
+            signed_info = signature.find(f'{{{DS_NS}}}SignedInfo')
+            if signed_info is None:
+                raise ValueError("SignedInfo element not found in signature")
+                
+            # 2. Compute and set digest values for each reference
+            for ref in signed_info.findall(f'{{{DS_NS}}}Reference'):
+                uri = ref.get('URI', '')
+                
+                # Skip if this is not a reference to signed properties
+                if not uri.startswith('#'):
+                    continue
+                    
+                # Find the referenced element
+                ref_id = uri[1:]
+                referenced_element = signature.find(f".//*[@Id='{ref_id}']")
+                
+                if referenced_element is not None:
+                    # Compute digest
+                    digest = self._compute_digest(referenced_element)
+                    digest_b64 = base64.b64encode(digest).decode('ascii')
+                    
+                    # Update DigestValue
+                    digest_value = ref.find(f'{{{DS_NS}}}DigestValue')
+                    if digest_value is not None:
+                        digest_value.text = digest_b64
+            
+            # 3. Canonicalize SignedInfo
+            signed_info_str = etree.tostring(signed_info, encoding='utf-8')
+            signed_info_parsed = etree.fromstring(signed_info_str)
+            signed_info_c14n = etree.tostring(
+                signed_info_parsed,
+                method='c14n',
+                exclusive=True,
+                with_comments=False,
+                inclusive_ns_prefixes=None
+            )
+            
+            # 4. Sign the canonicalized SignedInfo
+            from cryptography.hazmat.primitives.asymmetric import padding
+            from cryptography.hazmat.primitives import hashes
+            from cryptography.hazmat.primitives.serialization import load_pem_private_key
+            
+            # Load the private key
+            if isinstance(key_data, str):
+                key_data = key_data.encode('utf-8')
+                
+            if isinstance(key_password, str):
+                key_password = key_password.encode('utf-8')
+                
+            private_key = load_pem_private_key(
+                key_data,
+                password=key_password,
+                backend=default_backend()
+            )
+            
+            # Sign using RSA-PKCS1v15 with SHA-256
+            signature_bytes = private_key.sign(
+                signed_info_c14n,
+                padding.PKCS1v15(),
+                hashes.SHA256()
+            )
+            
+            # 5. Set the signature value
+            signature_value = signature.find(f'{{{DS_NS}}}SignatureValue')
+            if signature_value is not None:
+                # Ensure we're setting a string, not bytes
+                signature_value.text = base64.b64encode(signature_bytes).decode('ascii')
+                
+        except Exception as e:
+            logger.error(f"Error signing document: {str(e)}")
+            raise SignatureError(f"Failed to sign document: {str(e)}")
+
+    def sign_document(self, xml_doc: ET.Element, signature_id: str = 'SigFrs') -> None:
+        """
+        Sign the XML document with the specified signature.
+        
+        Args:
+            xml_doc: The XML document to sign
+            signature_id: The ID of the signature to use
+        """
+        if not self.signatures:
+            raise ValueError("No signatures available for signing")
+            
+        # Find the signature element
+        signature = xml_doc.find(f".//{{{DS_NS}}}Signature[@Id='{signature_id}']")
+        if signature is None:
+            # If signature element doesn't exist, create it
+            signature = self.to_xml()
+            xml_doc.append(signature)
+        
+        # Get the signature data
+        sig_data = next((s for s in self.signatures if s.get('id') == signature_id), None)
+        if not sig_data:
+            raise ValueError(f"No signature found with ID: {signature_id}")
+            
+        # Sign the document
+        self._sign_document(
+            signature,
+            sig_data['key_data'],
+            sig_data.get('key_password')
+        )
     
     def _create_signature_element(self, sig_data: Dict[str, Any]) -> ET.Element:
-        """Create a complete XAdES signature element."""
-        sig_id = sig_data.get('id', f'sig-{uuid.uuid4()}')
+        """
+        Crée un élément de signature complet.
         
-        # Create Signature element
-        signature = ET.Element(
-            '{http://www.w3.org/2000/09/xmldsig#}Signature',
-            {'Id': sig_id}
+        Args:
+            sig_data: Données de la signature
+            
+        Returns:
+            L'élément Signature créé
+        """
+        sig_id = sig_data.get('signature_id', 'SigFrs')
+        
+        # Créer l'élément Signature
+        signature = etree.Element(
+            f'{{{DS_NS}}}Signature',
+            {
+                'Id': sig_id,
+                'xmlns:ds': DS_NS,
+                'xmlns:xades': XADES_NS
+            }
         )
         
-        # Create SignedInfo
-        signed_info = ET.SubElement(signature, 'SignedInfo')
+        # Créer l'élément SignedInfo
+        signed_info = etree.SubElement(signature, f'{{{DS_NS}}}SignedInfo')
         
-        # Add canonicalization method
-        ET.SubElement(
+        # Ajouter la méthode de canonisation
+        etree.SubElement(
             signed_info,
-            'CanonicalizationMethod',
+            f'{{{DS_NS}}}CanonicalizationMethod',
             Algorithm='http://www.w3.org/2001/10/xml-exc-c14n#'
         )
         
-        # Add signature method
-        ET.SubElement(
+        # Ajouter la méthode de signature
+        etree.SubElement(
             signed_info,
-            'SignatureMethod',
+            f'{{{DS_NS}}}SignatureMethod',
             Algorithm='http://www.w3.org/2001/04/xmldsig-more#rsa-sha256'
         )
         
-        # Add reference to the signed content
-        ref = self._create_reference(
+        # Référence au contenu signé (r-id-frs)
+        ref1 = self._create_reference(
             signed_info,
+            uri='',
+            reference_id=f'r-id-{sig_id}',
             transforms=[
                 {
-                    'algorithm': 'http://www.w3.org/TR/1999/REC-xpath-19991116',
-                    'xpath': 'not(ancestor-or-self::ds:Signature)'
+                    'algorithm': 'http://www.w3.org/2000/09/xmldsig#enveloped-signature'
                 },
                 {
                     'algorithm': 'http://www.w3.org/2001/10/xml-exc-c14n#'
@@ -123,30 +605,41 @@ class SignatureSection:
             ]
         )
         
-        # Add reference to the XAdES signed properties
-        ref = self._create_reference(
+        # Référence aux propriétés XAdES
+        ref2 = self._create_reference(
             signed_info,
             uri=f"#xades-{sig_id}",
             transforms=[
                 {'algorithm': 'http://www.w3.org/2001/10/xml-exc-c14n#'}
             ]
         )
-        ref.set('Type', 'http://uri.etsi.org/01903#SignedProperties')
+        ref2.set('Type', 'http://uri.etsi.org/01903#SignedProperties')
         
-        # Add SignatureValue (placeholder)
-        ET.SubElement(
+        # Ajouter SignatureValue (vide pour l'instant)
+        etree.SubElement(
             signature,
-            'SignatureValue',
-            {'Id': f'value-{sig_id}'}
-        ).text = sig_data.get('signature_value', '')
+            f'{{{DS_NS}}}SignatureValue',
+            {'Id': f'sig-value-{sig_id}'}
+        )
         
-        # Add KeyInfo with certificate
-        key_info = ET.SubElement(signature, 'KeyInfo')
-        x509_data = ET.SubElement(key_info, 'X509Data')
-        ET.SubElement(x509_data, 'X509Certificate').text = sig_data.get('cert_data', '')
+        # Ajouter KeyInfo avec le certificat
+        key_info = etree.SubElement(signature, f'{{{DS_NS}}}KeyInfo')
+        x509_data = etree.SubElement(key_info, f'{{{DS_NS}}}X509Data')
         
-        # Add XAdES qualifying properties
-        self._create_signed_properties(signature, sig_id)
+        # Ajouter le certificat X509
+        cert_value = sig_data.get('cert_data', '').replace('-----BEGIN CERTIFICATE-----', '').replace('-----END CERTIFICATE-----', '').strip()
+        etree.SubElement(
+            x509_data, 
+            f'{{{DS_NS}}}X509Certificate'
+        ).text = cert_value
+        
+        # Ajouter les propriétés XAdES
+        self._create_signed_properties(
+            signature, 
+            sig_id,
+            role=sig_data.get('role'),
+            name=sig_data.get('name')
+        )
         
         return signature
     
@@ -159,70 +652,389 @@ class SignatureSection:
                      name: Optional[str] = None,
                      date: Optional[Union[str, datetime]] = None) -> None:
         """
-        Add a signature to the section with XAdES support.
-        
+        Ajoute une signature à la section.
+
         Args:
-            cert_data: Certificate data in PEM format or path to certificate file
-            key_data: Private key data or path to key file (optional)
-            key_password: Password for the private key (optional)
-            signature_id: Unique identifier for the signature
-            role: Role of the signer
-            name: Name of the signer
-            date: Signature date (default: current time)
+            cert_data: Données du certificat au format PEM ou chemin vers le fichier
+            key_data: Données de la clé privée ou chemin vers le fichier (optionnel)
+            key_password: Mot de passe de la clé privée (optionnel)
+            signature_id: Identifiant unique de la signature
+            role: Rôle du signataire (optionnel)
+            name: Nom du signataire (optionnel)
+            date: Date de signature (par défaut: maintenant)
         """
         try:
-            # Load certificate data
-            if isinstance(cert_data, str) and os.path.isfile(cert_data):
-                with open(cert_data, 'r', encoding='utf-8') as f:
-                    cert_content = f.read()
+            # Convertir cert_data en bytes si c'est une chaîne
+            if isinstance(cert_data, str):
+                if os.path.isfile(cert_data):
+                    with open(cert_data, 'rb') as f:
+                        cert_content = f.read()
+                else:
+                    cert_content = cert_data.encode('utf-8')
             else:
                 cert_content = cert_data
-            
-            # Clean certificate content
-            if '-----BEGIN CERTIFICATE-----' in cert_content:
-                cert_content = '\n'.join(
-                    line.strip()
-                    for line in cert_content.split('\n')
-                    if line.strip() and not line.strip().startswith('---')
-                )
-            
-            # Store signature data
+
+            # Afficher les premières lignes du certificat pour le débogage
+            cert_sample = cert_content[:100] if len(cert_content) > 100 else cert_content
+            logger.debug(f"Contenu du certificat (début) : {cert_sample}...")
+
+            # Valider le format du certificat
+            if not self._is_valid_certificate(cert_content):
+                logger.error("Le format du certificat est invalide")
+                logger.debug(f"Contenu complet du certificat : {cert_content}")
+                raise SignatureError("Format de certificat invalide. Assurez-vous que le certificat est au format PEM valide.")
+
+            # Nettoyer le contenu du certificat
+            if b'-----BEGIN CERTIFICATE-----' in cert_content:
+                # Extraire uniquement la partie certificat (au cas où il y aurait des en-têtes supplémentaires)
+                cert_parts = cert_content.split(b'-----BEGIN CERTIFICATE-----')
+                if len(cert_parts) > 1:
+                    cert_content = b'-----BEGIN CERTIFICATE-----' + cert_parts[1]
+                
+                # Nettoyer les sauts de ligne et les espaces
+                cert_lines = []
+                in_cert = False
+                for line in cert_content.splitlines():
+                    line = line.strip()
+                    if line == b'-----BEGIN CERTIFICATE-----':
+                        in_cert = True
+                        cert_lines.append(line)
+                    elif line == b'-----END CERTIFICATE-----':
+                        in_cert = False
+                        cert_lines.append(line)
+                    elif in_cert and line:
+                        # Supprimer tout ce qui n'est pas base64 valide
+                        cert_lines.append(line.split(b' ')[0].split(b'\t')[0])
+                
+                cert_content = b'\n'.join(cert_lines)
+                
+                # Vérifier que le certificat commence et se termine correctement
+                if not cert_content.startswith(b'-----BEGIN CERTIFICATE-----'):
+                    cert_content = b'-----BEGIN CERTIFICATE-----\n' + cert_content
+                if not cert_content.endswith(b'-----END CERTIFICATE-----'):
+                    cert_content = cert_content + b'\n-----END CERTIFICATE-----'
+
+            # Traitement de la clé privée
+            key_content = None
+            if key_data:
+                if isinstance(key_data, str):
+                    if os.path.isfile(key_data):
+                        with open(key_data, 'rb') as f:
+                            key_content = f.read()
+                    else:
+                        key_content = key_data.encode('utf-8')
+                else:
+                    key_content = key_data
+                
+                # Nettoyer la clé privée si nécessaire
+                if key_content and b'-----BEGIN' in key_content:
+                    key_lines = []
+                    in_key = False
+                    for line in key_content.splitlines():
+                        line = line.strip()
+                        if line.startswith(b'-----BEGIN'):
+                            in_key = True
+                            key_lines.append(line)
+                        elif line.startswith(b'-----END'):
+                            in_key = False
+                            key_lines.append(line)
+                        elif in_key and line:
+                            key_lines.append(line)
+                    
+                    key_content = b'\n'.join(key_lines)
+
+            # Stocker les données de signature
             self.signatures.append({
                 'id': signature_id or f'sig-{uuid.uuid4()}',
                 'cert_data': cert_content,
-                'key_data': key_data,
+                'key_data': key_content,
                 'key_password': key_password,
                 'role': role,
-                'name': name,
+                'name': name or 'Signataire',
                 'date': date or datetime.utcnow(),
-                'signature_value': '[SIGNATURE VALUE]'  # Placeholder
+                'signature_value': b'[SIGNATURE VALUE]',
+                'digest_value': b''
             })
             
+            logger.info(f"Signature ajoutée avec succès (ID: {self.signatures[-1]['id']})")
+
         except Exception as e:
-            raise SignatureError(f"Failed to add signature: {str(e)}")
+            if isinstance(e, SignatureError):
+                raise
+            error_msg = f"Échec de l'ajout de la signature: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            raise SignatureError(error_msg) from e
     
+    def _is_valid_certificate(self, cert_data: Union[str, bytes]) -> bool:
+        """
+        Vérifie si les données du certificat sont valides.
+        
+        Args:
+            cert_data: Données brutes du certificat
+            
+        Returns:
+            bool: True si le certificat est valide, False sinon
+        """
+        try:
+            # Vérifier si les données sont vides
+            if not cert_data or (isinstance(cert_data, str) and not cert_data.strip()):
+                logger.error("Les données du certificat sont vides")
+                return False
+                
+            # Convertir en bytes si c'est une chaîne
+            if isinstance(cert_data, str):
+                cert_data = cert_data.encode('utf-8')
+                
+            # Vérifier la présence des marqueurs PEM de base
+            if b'-----BEGIN CERTIFICATE-----' in cert_data and b'-----END CERTIFICATE-----' in cert_data:
+                return True
+                
+            # Si on arrive ici, le format n'est pas reconnu
+            logger.error("Format de certificat non reconnu. Le certificat doit être au format PEM.")
+            return False
+            
+        except Exception as e:
+            logger.error(f"Erreur lors de la validation du certificat: {str(e)}")
+            return False
+            
     def to_xml(self, parent: Optional[ET.Element] = None) -> ET.Element:
         """
-        Generate the XML representation of the signature section.
-        
+        Generate the XML representation of the signature section following XAdES-B standard.
+
         Args:
             parent: Parent element. If None, creates a new root element.
             
         Returns:
-            ET.Element: The generated XML element
+            The generated XML element
         """
-        if parent is None:
-            signature_section = ET.Element('SignatureSection')
-        else:
-            signature_section = ET.SubElement(parent, 'SignatureSection')
+        if not self.signatures:
+            raise ValueError("No signatures to include in the XML")
+            
+        # We'll only use the first signature as per XAdES spec
+        sig_data = self.signatures[0]
+        sig_id = sig_data.get('id', 'SigFrs')
         
-        # Add each signature
-        for sig_data in self.signatures:
-            signature = self._create_signature_element(sig_data)
-            signature_section.append(signature)
+        # Define namespace map
+        nsmap = {
+            'ds': DS_NS,
+            'xades': XADES_NS,
+            'xsi': XSI_NS
+        }
         
-        return signature_section
-
+        # Create the Signature element with proper namespaces
+        signature = etree.Element(
+            f'{{{DS_NS}}}Signature',
+            nsmap=nsmap,
+            attrib={
+                'Id': sig_id
+            }
+        )
+        
+        # Create SignedInfo
+        signed_info = etree.SubElement(signature, f'{{{DS_NS}}}SignedInfo')
+        
+        # Add CanonicalizationMethod
+        etree.SubElement(
+            signed_info,
+            f'{{{DS_NS}}}CanonicalizationMethod',
+            Algorithm=CANONICALIZATION_METHOD
+        )
+        
+        # Add SignatureMethod
+        etree.SubElement(
+            signed_info,
+            f'{{{DS_NS}}}SignatureMethod',
+            Algorithm=SIGNATURE_METHOD
+        )
+        
+        # Add Reference for the signed document
+        ref1 = etree.SubElement(
+            signed_info,
+            f'{{{DS_NS}}}Reference',
+            URI=''  # Reference to the root element
+        )
+        
+        # Add Transforms
+        transforms = etree.SubElement(ref1, f'{{{DS_NS}}}Transforms')
+        etree.SubElement(
+            transforms,
+            f'{{{DS_NS}}}Transform',
+            Algorithm='http://www.w3.org/2000/09/xmldsig#enveloped-signature'
+        )
+        
+        # Add DigestMethod
+        etree.SubElement(
+            ref1,
+            f'{{{DS_NS}}}DigestMethod',
+            Algorithm=DIGEST_METHOD
+        )
+        
+        # Add DigestValue (placeholder for now)
+        digest_value = etree.SubElement(ref1, f'{{{DS_NS}}}DigestValue')
+        
+        # Add Reference for SignedProperties
+        ref2 = etree.SubElement(
+            signed_info,
+            f'{{{DS_NS}}}Reference',
+            Type='http://uri.etsi.org/01903#SignedProperties',
+            URI='#xades-SigFrs'
+        )
+        
+        # Add DigestMethod for SignedProperties
+        etree.SubElement(
+            ref2,
+            f'{{{DS_NS}}}DigestMethod',
+            Algorithm=DIGEST_METHOD
+        )
+        
+        # Add DigestValue for SignedProperties (placeholder for now)
+        sp_digest_value = etree.SubElement(ref2, f'{{{DS_NS}}}DigestValue')
+        
+        # Add SignatureValue (will be filled later)
+        signature_value = etree.SubElement(
+            signature,
+            f'{{{DS_NS}}}SignatureValue',
+            Id='value-SigFrs'
+        )
+        
+        # Add KeyInfo with X509Data
+        key_info = etree.SubElement(signature, f'{{{DS_NS}}}KeyInfo')
+        x509_data = etree.SubElement(key_info, f'{{{DS_NS}}}X509Data')
+        
+        # Add certificate
+        cert_pem = sig_data.get('cert_data')
+        if not cert_pem:
+            raise SignatureError("No certificate data found in signature")
+            
+        # Ensure cert_pem is bytes
+        if isinstance(cert_pem, str):
+            cert_pem = cert_pem.encode('utf-8')
+            
+        # Load the certificate
+        cert = load_pem_x509_certificate(cert_pem, default_backend())
+        cert_der = cert.public_bytes(Encoding.DER)
+        cert_digest = hashlib.sha256(cert_der).digest()
+        cert_digest_b64 = base64.b64encode(cert_digest).decode('ascii')
+        
+        cert_clean = '\n'.join(
+            line.strip()
+            for line in cert_pem.decode('utf-8').split('\n')
+            if line.strip() and not line.startswith('-----')
+        )
+        etree.SubElement(
+            x509_data,
+            f'{{{DS_NS}}}X509Certificate'
+        ).text = cert_clean
+        
+        # Add Object with QualifyingProperties
+        obj = etree.SubElement(signature, f'{{{DS_NS}}}Object')
+        
+        # Add QualifyingProperties
+        qualifying_props = etree.SubElement(
+            obj,
+            f'{{{XADES_NS}}}QualifyingProperties',
+            Target='#SigFrs',
+            nsmap={'xades': XADES_NS}
+        )
+        
+        # Add SignedProperties
+        signed_props = etree.SubElement(
+            qualifying_props,
+            f'{{{XADES_NS}}}SignedProperties',
+            Id='xades-SigFrs'
+        )
+        
+        # Add SignedSignatureProperties
+        signed_sig_props = etree.SubElement(
+            signed_props,
+            f'{{{XADES_NS}}}SignedSignatureProperties'
+        )
+        
+        # Add SigningTime
+        signing_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        etree.SubElement(
+            signed_sig_props,
+            f'{{{XADES_NS}}}SigningTime'
+        ).text = signing_time
+        
+        # Add SigningCertificate
+        try:
+            cert = load_pem_x509_certificate(cert_pem, default_backend())
+            cert_der = cert.public_bytes(Encoding.DER)
+            cert_digest = hashlib.sha256(cert_der).digest()
+            cert_digest_b64 = base64.b64encode(cert_digest).decode('ascii')
+            
+            signing_cert = etree.SubElement(
+                signed_sig_props,
+                f'{{{XADES_NS}}}SigningCertificate'
+            )
+            cert_element = etree.SubElement(signing_cert, f'{{{XADES_NS}}}Cert')
+            
+            # Add CertDigest
+            cert_digest_elem = etree.SubElement(cert_element, f'{{{XADES_NS}}}CertDigest')
+            etree.SubElement(
+                cert_digest_elem,
+                f'{{{DS_NS}}}DigestMethod',
+                Algorithm=DIGEST_METHOD
+            )
+            etree.SubElement(
+                cert_digest_elem,
+                f'{{{DS_NS}}}DigestValue'
+            ).text = cert_digest_b64
+            
+            # Add IssuerSerial
+            issuer_serial = etree.SubElement(cert_element, f'{{{XADES_NS}}}IssuerSerial')
+            etree.SubElement(
+                issuer_serial,
+                f'{{{DS_NS}}}X509IssuerName'
+            ).text = ' '.join(
+                f"{name.oid._name}={name.value}" 
+                for name in cert.issuer
+            )
+            etree.SubElement(
+                issuer_serial,
+                f'{{{DS_NS}}}X509SerialNumber'
+            ).text = str(cert.serial_number)
+            
+        except Exception as e:
+            raise SignatureError(f"Failed to process certificate: {str(e)}")
+        
+        # Add SignaturePolicyIdentifier
+        policy_identifier = etree.SubElement(
+            signed_sig_props,
+            f'{{{XADES_NS}}}SignaturePolicyIdentifier'
+        )
+        policy_id = etree.SubElement(
+            policy_identifier,
+            f'{{{XADES_NS}}}SignaturePolicyId'
+        )
+        sig_policy_id = etree.SubElement(
+            policy_id,
+            f'{{{XADES_NS}}}SigPolicyId'
+        )
+        etree.SubElement(
+            sig_policy_id,
+            f'{{{XADES_NS}}}Identifier',
+            Qualifier='OID'
+        ).text = "1.3.6.1.4.1.13762.3"
+        etree.SubElement(
+            sig_policy_id,
+            f'{{{XADES_NS}}}Description'
+        ).text = "Politique de signature électronique pour la facturation électronique en Tunisie"
+        
+        # Convert lxml.etree element to xml.etree.ElementTree if parent is not None
+        if parent is not None:
+            # Import here to avoid circular imports
+            import xml.etree.ElementTree as ET
+            # Convert the lxml element to a string
+            signature_str = etree.tostring(signature, encoding='unicode')
+            # Parse it with xml.etree
+            signature_element = ET.fromstring(signature_str)
+            # Append to the parent
+            parent.append(signature_element)
+            return signature_element
+            
+        return signature
 
 class SignatureError(Exception):
     """Exception levée en cas d'erreur de signature."""
@@ -243,28 +1055,101 @@ def create_signature(parent: ET.Element, signature_data: Dict[str, Any]) -> ET.E
     Returns:
         L'élément de signature créé
     """
-    signature = ET.SubElement(parent, "Signature")
+    sig_id = signature_data.get('id', f'sig-{uuid.uuid4()}')
+    sig_type = signature_data.get('type', 'XAdES')
+    timestamp = signature_data.get('timestamp', datetime.now(timezone.utc).isoformat())
     
-    # ID de la signature
-    if 'id' in signature_data:
-        signature.set('Id', str(signature_data['id']))
+    # Créer l'élément Signature avec les espaces de noms nécessaires
+    signature = etree.SubElement(parent, f'{{{DS_NS}}}Signature')
+    signature.set('Id', sig_id)
     
-    # Type de signature
-    signature_type = signature_data.get('type', 'XAdES')
-    ET.SubElement(signature, "SignatureType").text = signature_type
+    # Ajouter les sous-éléments de base
+    signed_info = etree.SubElement(signature, f'{{{DS_NS}}}SignedInfo')
     
-    # Horodatage
-    timestamp = signature_data.get('timestamp', datetime.utcnow().isoformat() + 'Z')
-    ET.SubElement(signature, "SignatureTimestamp").text = str(timestamp)
+    # CanonicalizationMethod
+    canon_method = etree.SubElement(signed_info, f'{{{DS_NS}}}CanonicalizationMethod')
+    canon_method.set('Algorithm', CANONICALIZATION_METHOD)
     
-    # Informations sur le signataire (optionnelles)
-    if 'signer_info' in signature_data:
-        signer_info = ET.SubElement(signature, "SignerInfo")
-        for key, value in signature_data['signer_info'].items():
-            ET.SubElement(signer_info, key).text = str(value)
+    # SignatureMethod
+    sig_method = etree.SubElement(signed_info, f'{{{DS_NS}}}SignatureMethod')
+    sig_method.set('Algorithm', SIGNATURE_METHOD)
+    
+    # References
+    reference = etree.SubElement(signed_info, f'{{{DS_NS}}}Reference', URI=f'#{sig_id}-ref0')
+    transforms = etree.SubElement(reference, f'{{{DS_NS}}}Transforms')
+    etree.SubElement(transforms, f'{{{DS_NS}}}Transform', Algorithm='http://www.w3.org/2000/09/xmldsig#enveloped-signature')
+    
+    digest_method = etree.SubElement(reference, f'{{{DS_NS}}}DigestMethod', Algorithm=DIGEST_METHOD)
+    digest_value = etree.SubElement(reference, f'{{{DS_NS}}}DigestValue')
+    
+    # SignatureValue
+    etree.SubElement(signature, f'{{{DS_NS}}}SignatureValue')
+    
+    # KeyInfo
+    key_info = etree.SubElement(signature, f'{{{DS_NS}}}KeyInfo')
+    x509_data = etree.SubElement(key_info, f'{{{DS_NS}}}X509Data')
+    etree.SubElement(x509_data, f'{{{DS_NS}}}X509Certificate')
+    
+    # Object pour XAdES
+    obj = etree.SubElement(signature, f'{{{DS_NS}}}Object')
+    
+    # QualifyingProperties
+    qualifying_props = etree.SubElement(
+        obj, 
+        f'{{{XADES_NS}}}QualifyingProperties',
+        Target=f'#{sig_id}'
+    )
+    
+    # SignedProperties
+    signed_props = etree.SubElement(
+        qualifying_props, 
+        f'{{{XADES_NS}}}SignedProperties',
+        Id=f'{sig_id}-signed-props'
+    )
+    
+    # SignedSignatureProperties
+    signed_sig_props = etree.SubElement(
+        signed_props, 
+        f'{{{XADES_NS}}}SignedSignatureProperties'
+    )
+    
+    # SigningTime
+    signing_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    etree.SubElement(
+        signed_sig_props,
+        f'{{{XADES_NS}}}SigningTime'
+    ).text = signing_time
+    
+    # SigningCertificate
+    signing_cert = etree.SubElement(
+        signed_sig_props,
+        f'{{{XADES_NS}}}SigningCertificate'
+    )
+    cert = etree.SubElement(signing_cert, f'{{{XADES_NS}}}Cert')
+    
+    cert_digest = etree.SubElement(cert, f'{{{XADES_NS}}}CertDigest')
+    etree.SubElement(cert_digest, f'{{{DS_NS}}}Method', Algorithm=DIGEST_METHOD)
+    etree.SubElement(cert_digest, f'{{{DS_NS}}}DigestValue')
+    
+    # SignaturePolicyIdentifier
+    sig_policy_id = etree.SubElement(
+        signed_sig_props,
+        f'{{{XADES_NS}}}SignaturePolicyIdentifier'
+    )
+    sig_policy_id_elem = etree.SubElement(
+        sig_policy_id,
+        f'{{{XADES_NS}}}SignaturePolicyId'
+    )
+    sig_policy_id_id = etree.SubElement(
+        sig_policy_id_elem,
+        f'{{{XADES_NS}}}SigPolicyId'
+    )
+    etree.SubElement(
+        sig_policy_id_id,
+        f'{{{XADES_NS}}}Identifier'
+    )
     
     return signature
-
 
 def add_signature(
     parent: ET.Element, 
@@ -297,18 +1182,18 @@ def add_signature(
         cert = _load_certificate(cert_data['cert'])
         
         # Créer l'élément de signature
-        signature = ET.SubElement(parent, "Signature")
+        signature = etree.SubElement(parent, "Signature")
         
         # ID de la signature
         if signature_data and 'id' in signature_data:
             signature.set("Id", str(signature_data['id']))
         
         # Informations sur le signataire
-        signer_info = ET.SubElement(signature, "SignerInformation")
+        signer_info = etree.SubElement(signature, "SignerInformation")
         
         # Rôle du signataire
         if signature_data and 'role' in signature_data:
-            ET.SubElement(
+            etree.SubElement(
                 signer_info,
                 "SignerRole",
                 code=signature_data['role']
@@ -316,27 +1201,35 @@ def add_signature(
         
         # Nom du signataire
         if signature_data and 'name' in signature_data:
-            ET.SubElement(signer_info, "SignerName").text = str(signature_data['name'])
+            etree.SubElement(signer_info, "SignerName").text = str(signature_data['name'])
         
         # Date de signature
         sign_date = datetime.now()
-        if signature_data and 'date' in signature_data:
-            sign_date = signature_data['date']
+        if signature_data and 'date' in signature_data and signature_data['date'] is not None:
+            if isinstance(signature_data['date'], str):
+                # Parse string to datetime if needed
+                try:
+                    sign_date = datetime.fromisoformat(signature_data['date'].replace('Z', '+00:00'))
+                except (ValueError, AttributeError):
+                    # If parsing fails, use current time
+                    sign_date = datetime.now()
+            elif isinstance(signature_data['date'], datetime):
+                sign_date = signature_data['date']
         
-        ET.SubElement(
+        etree.SubElement(
             signature,
             "SigningTime"
         ).text = sign_date.strftime('%Y-%m-%dT%H:%M:%SZ')
         
         # Données du certificat
-        cert_info = ET.SubElement(signature, "SigningCertificate")
+        cert_info = etree.SubElement(signature, "SigningCertificate")
         
         # Empreinte numérique du certificat
-        cert_digest = ET.SubElement(cert_info, "CertDigest")
+        cert_digest = etree.SubElement(cert_info, "CertDigest")
         cert_digest.text = cert.digest('sha1').decode('ascii')
         
         # Données brutes du certificat (encodées en base64)
-        cert_value = ET.SubElement(cert_info, "CertValue")
+        cert_value = etree.SubElement(cert_info, "CertValue")
         cert_value.text = base64.b64encode(
             crypto.dump_certificate(crypto.FILETYPE_ASN1, cert)
         ).decode('ascii')
@@ -348,12 +1241,19 @@ def add_signature(
                 cert_data.get('password')
             )
             
-            # Créer la signature
+            # Créer une instance de SignatureSection pour utiliser sa méthode _sign_data
+            signer = SignatureSection()
+            
+            # Créer la signature en utilisant la méthode d'instance
             signed_info = _create_signed_info(parent)
-            signature_value = _sign_data(signed_info, private_key)
+            signature_value = signer._sign_data(
+                signed_info,
+                private_key,
+                cert_data.get('password')
+            )
             
             # Ajouter la valeur de la signature
-            sig_value = ET.SubElement(signature, "SignatureValue")
+            sig_value = etree.SubElement(signature, "SignatureValue")
             sig_value.text = base64.b64encode(signature_value).decode('ascii')
     
     except Exception as e:
@@ -377,7 +1277,11 @@ def _load_certificate(cert_data: str) -> crypto.X509:
         # Vérifier si les données contiennent un en-tête PEM
         if '-----BEGIN CERTIFICATE-----' in cert_data or '-----BEGIN CERTIFICATE-----' in cert_data.upper():
             # Nettoyer les données PEM (supprimer les espaces et retours à la ligne en trop)
-            cert_data = '\n'.join(line.strip() for line in cert_data.split('\n') if line.strip())
+            cert_data = '\n'.join(
+                line.strip()
+                for line in cert_data.split('\n')
+                if line.strip() and not line.startswith('---')
+            )
             # S'assurer que l'en-tête et le pied de page sont corrects
             if not cert_data.startswith('-----BEGIN CERTIFICATE-----'):
                 cert_data = '-----BEGIN CERTIFICATE-----\n' + cert_data
@@ -400,14 +1304,17 @@ def _load_certificate(cert_data: str) -> crypto.X509:
         raise SignatureError(f"Impossible de charger le certificat: {str(e)}")
 
 
-def _load_private_key(key_data: bytes, password: Optional[bytes] = None):
+def _load_private_key(
+    key_data: Union[bytes, str],
+    password: Optional[Union[str, bytes]] = None
+):
     """
-    Load a private key from PEM data, handling both PKCS#1 and PKCS#8 formats.
-    
+    Load a private key from PEM data.
+
     Args:
-        key_data: The private key data in PEM format
+        key_data: The key data as bytes or string (PEM format)
         password: Optional password if the key is encrypted
-        
+
     Returns:
         The loaded private key
         
@@ -415,95 +1322,135 @@ def _load_private_key(key_data: bytes, password: Optional[bytes] = None):
         ValueError: If the key cannot be loaded
     """
     try:
+        # Convert string to bytes if needed
+        if isinstance(key_data, str):
+            if os.path.isfile(key_data):
+                with open(key_data, "rb") as f:
+                    key_pem = f.read()
+            else:
+                key_pem = key_data.encode("utf-8")
+                
+        # Convert password to bytes if it's a string
+        if isinstance(password, str):
+            password = password.encode("utf-8")
+
         # Try loading as PKCS#8 first
-        key = load_pem_private_key(
-            key_data,
-            password=password,
-            backend=default_backend()
-        )
-        return key
-    except ValueError as e:
-        if "Could not deserialize key data" in str(e):
-            # If PKCS#8 fails, try PKCS#1 format by adding the appropriate headers
-            try:
-                key_data_pkcs1 = key_data
-                if b'-----BEGIN RSA PRIVATE KEY-----' not in key_data:
-                    key_data_pkcs1 = (
+        try:
+            key = load_pem_private_key(
+                key_pem,
+                password=password,
+                backend=default_backend()
+            )
+            return key
+        except ValueError as e:
+            if "Could not deserialize key data" in str(e):
+                # If PKCS#8 fails, try PKCS#1 format by adding the appropriate headers
+                if isinstance(key_pem, str):
+                    key_pkcs1 = key_pem.encode('utf-8')
+                else:
+                    key_pkcs1 = key_pem
+                    
+                if b'-----BEGIN RSA PRIVATE KEY-----' not in key_pkcs1:
+                    key_pkcs1 = (
                         b"-----BEGIN RSA PRIVATE KEY-----\n" +
-                        key_data.replace(b" ", b"").replace(b"\n", b"") +
+                        key_pkcs1.replace(b" ", b"").replace(b"\n", b"") +
                         b"\n-----END RSA PRIVATE KEY-----"
                     )
-                key = load_pem_private_key(
-                    key_data_pkcs1,
-                    password=password,
-                    backend=default_backend()
-                )
-                return key
-            except Exception as inner_e:
-                raise ValueError(f"Failed to load private key (tried PKCS#1 and PKCS#8): {str(inner_e)}")
-        else:
-            raise
+                try:
+                    key = load_pem_private_key(
+                        key_pkcs1,
+                        password=password,
+                        backend=default_backend()
+                    )
+                    return key
+                except Exception as inner_e:
+                    raise ValueError(f"Failed to load private key (tried PKCS#1 and PKCS#8): {str(inner_e)}")
+            else:
+                raise
     except Exception as e:
         raise ValueError(f"Failed to load private key: {str(e)}")
 
 
 def _create_signed_info(element: ET.Element) -> bytes:
     """Crée l'élément SignedInfo pour la signature."""
-    # Convertir l'élément en chaîne XML canonique
-    xml_str = ET.tostring(element, encoding='utf-8', method='xml')
+    # Convertir l'élément en chaîne XML
+    xml_str = etree.tostring(element, encoding='utf-8', method='xml')
     
-    # Parser avec lxml pour la canonisation
-    parser = etree.XMLParser(remove_blank_text=True)
-    doc = etree.fromstring(xml_str, parser)
+    # Parser avec xml.etree.ElementTree
+    parser = etree.XMLParser()
+    doc = etree.fromstring(xml_str, parser=parser)
     
     # Canonisation exclusive XML 1.0
     signed_info = etree.tostring(
         doc,
         method='c14n',
         exclusive=True,
-        with_comments=False,
-        inclusive_ns_prefixes=None
+        with_comments=False
     )
     
     return signed_info
 
 
-def _sign_data(data: bytes, private_key: crypto.PKey) -> bytes:
-    """Signe des données avec une clé privée."""
+def _sign_data(
+    self,
+    data: bytes,
+    private_key_data: Union[bytes, str],
+    password: Optional[Union[str, bytes]] = None
+) -> bytes:
+    """
+    Sign data with a private key.
+
+    Args:
+        data: The data to be signed
+        private_key_data: Private key as bytes or string (PEM)
+        password: Optional password if the key is encrypted
+
+    Returns:
+        The signature as bytes
+
+    Raises:
+        SignatureError: If there's an error during signing
+    """
     try:
-        # Créer un objet de signature
-        from cryptography.hazmat.primitives import hashes
         from cryptography.hazmat.primitives.asymmetric import padding
-        from cryptography.hazmat.backends import default_backend
-        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.serialization import load_pem_private_key
         
-        # Convertir la clé OpenSSL en clé cryptography
-        pem_key = crypto.dump_privatekey(
-            crypto.FILETYPE_PEM,
-            private_key
-        )
-        
-        key = serialization.load_pem_private_key(
-            pem_key,
-            password=None,
+        # Convert string to bytes if needed
+        if isinstance(private_key_data, str):
+            if os.path.isfile(private_key_data):
+                with open(private_key_data, "rb") as f:
+                    key_pem = f.read()
+            else:
+                key_pem = private_key_data.encode("utf-8")
+                
+        # Convert password to bytes if it's a string
+        if isinstance(password, str):
+            password = password.encode("utf-8")
+
+        # Load private key
+        key = load_pem_private_key(
+            private_key_data,
+            password=password,
             backend=default_backend()
         )
         
-        # Signer les données
+        # Sign the data
         signature = key.sign(
             data,
             padding.PKCS1v15(),
             hashes.SHA256()
         )
-        
+
         return signature
+
     except Exception as e:
         raise SignatureError(f"Erreur lors de la signature des données: {str(e)}")
 
 
 def sign_xml(xml_data: Union[str, bytes], cert_pem: bytes, key_pem: bytes, key_password: Optional[bytes] = None) -> bytes:
     """
-    Sign an XML document with XAdES-B signature.
+    Sign an XML document with XAdES-B signature according to TEIF specifications.
     
     Args:
         xml_data: The XML document to sign (as string or bytes)
@@ -512,157 +1459,316 @@ def sign_xml(xml_data: Union[str, bytes], cert_pem: bytes, key_pem: bytes, key_p
         key_password: Password for the private key (if encrypted)
         
     Returns:
-        Signed XML document as bytes
+        Signed XML document as bytes with proper XAdES-B signature
         
     Raises:
         SignatureError: If there's an error during the signing process
     """
     try:
-        # Parse the XML
+        # Parse the input XML
         if isinstance(xml_data, str):
             xml_data = xml_data.encode('utf-8')
             
-        # Parse the XML document
+        # Parse the XML and ensure we have a root element
         parser = etree.XMLParser(remove_blank_text=True)
-        root = etree.fromstring(xml_data, parser=parser)
-        
-        # Register namespaces
-        ns = {
-            'ds': 'http://www.w3.org/2000/09/xmldsig#',
-            'xades': 'http://uri.etsi.org/01903/v1.3.2#'
-        }
-        
-        # Find or create the signature element
-        signature = root.find('.//ds:Signature', namespaces=ns)
-        if signature is None:
-            raise SignatureError("No Signature element found in the XML document")
-            
-        # Load the private key
         try:
-            private_key = _load_private_key(key_pem, key_password)
-        except Exception as e:
-            raise SignatureError(f"Failed to load private key: {str(e)}")
-            
-        # 2. Calculate digest of the document (excluding signature)
-        # Create a copy of the document without the signature
-        doc_without_sig = etree.Element(root.tag, root.attrib)
-        for elem in root:
-            if elem.tag != f"{{{ns['ds']}}}Signature":
-                doc_without_sig.append(copy.deepcopy(elem))
+            root = etree.fromstring(xml_data, parser=parser)
+        except etree.ParseError as e:
+            raise SignatureError(f"Failed to parse XML: {str(e)}")
         
-        # Canonicalize the document without signature
-        c14n_doc = etree.tostring(
-            doc_without_sig,
-            method='c14n',
-            exclusive=True,
-            with_comments=False
+        # Register namespaces for proper XML serialization
+        for prefix, uri in NSMAP.items():
+            etree.register_namespace(prefix, uri)
+        
+        # Create the main Signature element with proper namespaces
+        signature = etree.Element(
+            f'{{{DS_NS}}}Signature',
+            {
+                'Id': 'SigFrs',
+                'xmlns:ds': DS_NS,
+                'xmlns:xades': XADES_NS
+            }
         )
         
-        # Calculate digest of the document
-        doc_digest = hashlib.sha256(c14n_doc).digest()
-        doc_digest_b64 = base64.b64encode(doc_digest).decode('ascii')
+        # 1. Create SignedInfo
+        signed_info = etree.SubElement(signature, f'{{{DS_NS}}}SignedInfo')
         
-        # Update the reference to the document
-        ref = signature.find('.//ds:Reference[@Id="r-id-frs"]', namespaces=ns)
-        if ref is not None:
-            digest_value = ref.find('.//ds:DigestValue', namespaces=ns)
-            if digest_value is not None:
-                digest_value.text = doc_digest_b64
+        # Add CanonicalizationMethod
+        etree.SubElement(
+            signed_info,
+            f'{{{DS_NS}}}CanonicalizationMethod',
+            Algorithm=CANONICALIZATION_METHOD
+        )
         
-        # 3. Calculate digest of the signed properties
-        signed_props = signature.find('.//xades:SignedProperties', namespaces=ns)
-        if signed_props is None:
-            raise SignatureError("No SignedProperties element found")
-            
-        # Set the Id attribute if not present
-        if 'Id' not in signed_props.attrib:
-            signed_props.attrib['Id'] = 'xades-SigFrs'
-            
-        # Get the Id for reference
-        signed_props_id = signed_props.attrib['Id']
+        # Add SignatureMethod
+        etree.SubElement(
+            signed_info,
+            f'{{{DS_NS}}}SignatureMethod',
+            Algorithm=SIGNATURE_METHOD
+        )
         
-        # Update the reference URI in the signature
-        ref = signature.find(f'.//ds:Reference[@Type="http://uri.etsi.org/01903#SignedProperties"]', namespaces=ns)
-        if ref is not None:
-            ref.attrib['URI'] = f"#{signed_props_id}"
+        # Add Reference to the signed data
+        ref1 = etree.SubElement(
+            signed_info,
+            f'{{{DS_NS}}}Reference',
+            URI=''  # Reference to the root element
+        )
+        
+        # Add Transforms
+        transforms = etree.SubElement(ref1, f'{{{DS_NS}}}Transforms')
+        etree.SubElement(
+            transforms,
+            f'{{{DS_NS}}}Transform',
+            Algorithm='http://www.w3.org/2000/09/xmldsig#enveloped-signature'
+        )
+        
+        # Add DigestMethod
+        etree.SubElement(
+            ref1,
+            f'{{{DS_NS}}}DigestMethod',
+            Algorithm=DIGEST_METHOD
+        )
+        
+        # Add DigestValue (placeholder for now)
+        digest_value = etree.SubElement(ref1, f'{{{DS_NS}}}DigestValue')
+        
+        # Add Reference for SignedProperties
+        ref2 = etree.SubElement(
+            signed_info,
+            f'{{{DS_NS}}}Reference',
+            Type='http://uri.etsi.org/01903#SignedProperties',
+            URI='#xades-SigFrs'
+        )
+        
+        # Add DigestMethod for SignedProperties
+        etree.SubElement(
+            ref2,
+            f'{{{DS_NS}}}DigestMethod',
+            Algorithm=DIGEST_METHOD
+        )
+        
+        # Add DigestValue for SignedProperties (placeholder for now)
+        sp_digest_value = etree.SubElement(ref2, f'{{{DS_NS}}}DigestValue')
+        
+        # 2. Add SignatureValue (will be filled later)
+        signature_value = etree.SubElement(
+            signature,
+            f'{{{DS_NS}}}SignatureValue',
+            Id='value-SigFrs'
+        )
+        
+        # 3. Add KeyInfo with X509Data
+        key_info = etree.SubElement(signature, f'{{{DS_NS}}}KeyInfo')
+        x509_data = etree.SubElement(key_info, f'{{{DS_NS}}}X509Data')
+        
+        # Add certificate
+        cert_clean = '\n'.join(
+            line.strip()
+            for line in cert_pem.decode('utf-8').split('\n')
+            if line.strip() and not line.startswith('-----')
+        )
+        etree.SubElement(
+            x509_data,
+            f'{{{DS_NS}}}X509Certificate'
+        ).text = cert_clean
+        
+        # 4. Add Object with QualifyingProperties
+        obj = etree.SubElement(signature, f'{{{DS_NS}}}Object')
+        
+        # 4.1 Create QualifyingProperties
+        qualifying_props = etree.SubElement(
+            obj,
+            f'{{{XADES_NS}}}QualifyingProperties',
+            Target='#SigFrs',
+            nsmap={'xades': XADES_NS}
+        )
+        
+        # 4.2 Create SignedProperties
+        signed_props = etree.SubElement(
+            qualifying_props,
+            f'{{{XADES_NS}}}SignedProperties',
+            Id='xades-SigFrs'
+        )
+        
+        # 4.3 Create SignedSignatureProperties
+        signed_sig_props = etree.SubElement(
+            signed_props,
+            f'{{{XADES_NS}}}SignedSignatureProperties'
+        )
+        
+        # Add SigningTime
+        signing_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        etree.SubElement(
+            signed_sig_props,
+            f'{{{XADES_NS}}}SigningTime'
+        ).text = signing_time
+        
+        # Add SigningCertificate
+        try:
+            cert = load_pem_x509_certificate(cert_pem, default_backend())
+            cert_der = cert.public_bytes(Encoding.DER)
+            cert_digest = hashlib.sha256(cert_der).digest()
+            cert_digest_b64 = base64.b64encode(cert_digest).decode('ascii')
             
-            # Canonicalize the SignedProperties element
-            c14n_signed_props = etree.tostring(
+            signing_cert = etree.SubElement(
+                signed_sig_props,
+                f'{{{XADES_NS}}}SigningCertificate'
+            )
+            cert_element = etree.SubElement(signing_cert, f'{{{XADES_NS}}}Cert')
+            
+            # Add CertDigest
+            cert_digest_elem = etree.SubElement(cert_element, f'{{{XADES_NS}}}CertDigest')
+            etree.SubElement(
+                cert_digest_elem,
+                f'{{{DS_NS}}}DigestMethod',
+                Algorithm=DIGEST_METHOD
+            )
+            etree.SubElement(
+                cert_digest_elem,
+                f'{{{DS_NS}}}DigestValue'
+            ).text = cert_digest_b64
+            
+            # Add IssuerSerial
+            issuer_serial = etree.SubElement(cert_element, f'{{{XADES_NS}}}IssuerSerial')
+            etree.SubElement(
+                issuer_serial,
+                f'{{{DS_NS}}}X509IssuerName'
+            ).text = ' '.join(
+                f"{name.oid._name}={name.value}" 
+                for name in cert.issuer
+            )
+            etree.SubElement(
+                issuer_serial,
+                f'{{{DS_NS}}}X509SerialNumber'
+            ).text = str(cert.serial_number)
+            
+        except Exception as e:
+            raise SignatureError(f"Failed to process certificate: {str(e)}")
+        
+        # Add SignaturePolicyIdentifier
+        policy_identifier = etree.SubElement(
+            signed_sig_props,
+            f'{{{XADES_NS}}}SignaturePolicyIdentifier'
+        )
+        policy_id = etree.SubElement(
+            policy_identifier,
+            f'{{{XADES_NS}}}SignaturePolicyId'
+        )
+        sig_policy_id = etree.SubElement(
+            policy_id,
+            f'{{{XADES_NS}}}SigPolicyId'
+        )
+        etree.SubElement(
+            sig_policy_id,
+            f'{{{XADES_NS}}}Identifier',
+            Qualifier='OID'
+        ).text = "1.3.6.1.4.1.13762.3"
+        etree.SubElement(
+            sig_policy_id,
+            f'{{{XADES_NS}}}Description'
+        ).text = "Politique de signature électronique pour la facturation électronique en Tunisie"
+        
+        # 5. Calculate digests and signature
+        # 5.1 Calculate digest of the document (excluding signature)
+        root_copy = copy.deepcopy(root)
+        
+        # Remove existing Signature elements to prevent recursion
+        for elem in root_copy.findall(f'.//{{{DS_NS}}}Signature'):
+            parent = elem.getparent()
+            if parent is not None:
+                parent.remove(elem)
+        
+        # Canonicalize the document
+        try:
+            c14n_doc = etree.tostring(
+                root_copy,
+                method='c14n',
+                exclusive=True,
+                with_comments=False
+            )
+            doc_digest = hashlib.sha256(c14n_doc).digest()
+            doc_digest_b64 = base64.b64encode(doc_digest).decode('ascii')
+            
+            # Update digest value for reference 1 (document)
+            digest_value.text = doc_digest_b64
+            
+            # 5.2 Calculate digest of the SignedProperties
+            signed_props_c14n = etree.tostring(
                 signed_props,
                 method='c14n',
                 exclusive=True,
                 with_comments=False
             )
-            
-            # Calculate digest of the SignedProperties
-            signed_props_digest = hashlib.sha256(c14n_signed_props).digest()
+            signed_props_digest = hashlib.sha256(signed_props_c14n).digest()
             signed_props_digest_b64 = base64.b64encode(signed_props_digest).decode('ascii')
             
-            # Update the digest value
-            digest_value = ref.find('.//ds:DigestValue', namespaces=ns)
-            if digest_value is not None:
-                digest_value.text = signed_props_digest_b64
-        
-        # 4. Calculate the signature value
-        signed_info = signature.find('.//ds:SignedInfo', namespaces=ns)
-        if signed_info is None:
-            raise SignatureError("No SignedInfo element found")
+            # Update digest value for reference 2 (signed properties)
+            sp_digest_value.text = signed_props_digest_b64
             
-        # Canonicalize the SignedInfo element
-        c14n_signed_info = etree.tostring(
-            signed_info,
-            method='c14n',
-            exclusive=True,
-            with_comments=False
-        )
-        
-        # Sign the canonicalized SignedInfo
-        signature_value = private_key.sign(
-            c14n_signed_info,
-            padding.PKCS1v15(),
-            hashes.SHA256()
-        )
-        signature_value_b64 = base64.b64encode(signature_value).decode('ascii')
-        
-        # Update the SignatureValue element
-        sig_value_elem = signature.find('.//ds:SignatureValue', namespaces=ns)
-        if sig_value_elem is not None:
-            sig_value_elem.text = signature_value_b64
-        
-        # 5. Add the certificate to the KeyInfo
-        x509_data = signature.find('.//ds:X509Data', namespaces=ns)
-        if x509_data is not None:
-            # Remove any existing X509Certificate elements
-            for elem in x509_data.findall('.//ds:X509Certificate', namespaces=ns):
-                x509_data.remove(elem)
-                
-            # Add the certificate (remove PEM headers/footers and newlines)
-            cert_pem_str = cert_pem.decode('utf-8')
-            cert_clean = '\n'.join(line.strip() 
-                                 for line in cert_pem_str.split('\n') 
-                                 if line.strip() and 
-                                 not line.startswith('-----') and 
-                                 not line.endswith('-----'))
+            # 5.3 Calculate signature value
+            # Canonicalize SignedInfo
+            signed_info_str = etree.tostring(signed_info, encoding='utf-8')
+            signed_info_parsed = etree.fromstring(signed_info_str)
+            signed_info_c14n = etree.tostring(
+                signed_info_parsed,
+                method='c14n',
+                exclusive=True,
+                with_comments=False,
+                inclusive_ns_prefixes=None
+            )
             
-            cert_elem = etree.SubElement(x509_data, f"{{{ns['ds']}}}X509Certificate")
-            cert_elem.text = cert_clean
-        
-        # Return the signed XML
-        return etree.tostring(
-            root,
-            xml_declaration=True,
-            encoding='UTF-8',
-            pretty_print=True
-        )
-        
+            # Sign the canonicalized SignedInfo
+            private_key = _load_private_key(key_pem, key_password)
+            signature_bytes = private_key.sign(
+                signed_info_c14n,
+                padding.PKCS1v15(),
+                hashes.SHA256()
+            )
+            
+            # Update signature value
+            signature_value.text = base64.b64encode(signature_bytes).decode('ascii')
+            
+            # Add signature to the root element
+            root.append(signature)
+            
+            # Create the final XML with proper declaration and namespaces
+            xml_declaration = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+            # Create a new root element with all necessary namespaces
+            nsmap = {
+                None: root.tag.split('}')[0][1:],  # Default namespace from root element
+                'ds': DS_NS,
+                'xades': XADES_NS,
+                'xsi': XSI_NS,
+                'xsd': XSD_NS
+            }
+            
+            # Create a new root with proper namespaces
+            new_root = etree.Element(root.tag, nsmap=nsmap)
+            
+            # Copy all attributes from original root
+            for name, value in root.attrib.items():
+                if not name.startswith('xmlns'):  # Skip existing xmlns declarations
+                    new_root.set(name, value)
+            
+            # Copy all child elements
+            for child in root:
+                new_root.append(child)
+            
+            # Generate the final XML
+            from lxml import etree
+            xml_str = etree.tostring(
+                new_root,
+                encoding='UTF-8',
+                method='xml',
+                xml_declaration=False,
+                pretty_print=True
+            ).decode('utf-8')
+            
+            # Add XML declaration and ensure proper indentation
+            return (xml_declaration + xml_str).encode('utf-8')
+            
+        except Exception as e:
+            raise SignatureError(f"Error during signature calculation: {str(e)}")
+            
     except Exception as e:
-        raise SignatureError(f"Error signing XML: {str(e)}")
-
-
-__all__ = [
-    'create_signature',
-    'add_signature',
-    'sign_xml',
-    'SignatureError',
-    'SignatureSection'
-]
+        raise SignatureError(f"Failed to sign XML: {str(e)}") from e

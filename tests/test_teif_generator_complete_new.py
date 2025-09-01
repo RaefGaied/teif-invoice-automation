@@ -288,16 +288,12 @@ def generate_complete_teif_invoice():
         # Signature information
         "signatures": [
             {
-                "id": "SigFrs",
                 "signer_role": "Fournisseur",
-                "signature_policy": {
-                    "policy_identifier": "1.8.8",
-                    "policy_description": "Politique de signature TEIF 1.8.8"
-                },
-                # In a real scenario, these would be actual certificate and signature values
-                "x509_cert": "MIIE...",
-                "signature_value": "MIIE...",
-                "digest_value": "MIIE..."
+                "x509_cert": open(os.path.join(os.path.dirname(__file__), 'test_data', 'test_cert.pem'), 'rb').read(),
+                "private_key": open(os.path.join(os.path.dirname(__file__), 'test_data', 'test_key.pem'), 'rb').read(),
+                "key_password": None,  # No password for test key
+                "signer_name": "Fournisseur Test",
+                "date": "2023-01-01T12:00:00Z"
             }
         ]
     }
@@ -381,6 +377,21 @@ def main():
         
         # Create output directory if it doesn't exist
         os.makedirs('output', exist_ok=True)
+        
+        # Check if test certificate exists
+        cert_path = os.path.join(os.path.dirname(__file__), 'test_data', 'test_cert.pem')
+        key_path = os.path.join(os.path.dirname(__file__), 'test_data', 'test_key.pem')
+        
+        if not os.path.exists(cert_path) or not os.path.exists(key_path):
+            print("Test certificate or key not found. Generating test certificate...")
+            try:
+                from generate_test_cert import generate_self_signed_cert
+                generate_self_signed_cert()
+                print("Test certificate generated successfully.")
+            except Exception as e:
+                print(f"Failed to generate test certificate: {str(e)}")
+                print("Please run 'python tests/generate_test_cert.py' manually to generate test certificates.")
+                return 1
         
         # Generate the invoice data
         print("Génération des données de la facture...")

@@ -1,3 +1,27 @@
+# XML and cryptography
+lxml>=4.9.0
+cryptography>=38.0.0
+pyOpenSSL>=22.0.0
+
+# PDF processing
 pdfplumber>=0.9.0
-PyPDF2>=3.0.0
-pyopenssl>=23.2.0
+PyPDF2>=2.10.0
+
+# Testing
+pytest>=7.0.0
+pytest-cov>=4.0.0
+
+# XML Digital Signatures
+signxml>=3.2.0
+xmlsec>=1.3.12
+
+# For XAdES support
+python-xades>=4.1.0
+
+# Date and time handling
+python-dateutil>=2.8.2
+pytz>=2022.1
+
+# Utilities
+python-dotenv>=0.20.0
+requests>=2.28.0

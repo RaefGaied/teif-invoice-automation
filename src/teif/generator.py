@@ -1,4 +1,4 @@
-import xml.etree.ElementTree as ET
+from xml.etree import ElementTree as ET
 from typing import Dict, Any, List, Optional, Union
 from datetime import datetime, timedelta
 import logging
@@ -112,32 +112,56 @@ class TEIFGenerator:
             
             # Add signatures if available
             if 'signatures' in data and data['signatures']:
-                from .sections.signature import SignatureSection
+                from .sections.signature import SignatureSection, create_signature, add_signature
+                
+                # Create a signature section
                 signature_section = SignatureSection()
                 
-                for sig_data in data['signatures']:
+                # We'll only use the first signature as per XAdES spec
+                sig_data = data['signatures'][0]
+                
+                # Add certificate and key if provided
+                if 'x509_cert' in sig_data:
+                    # Pass the certificate data directly, not as a dictionary
                     signature_section.add_signature(
-                        cert_data=sig_data.get('x509_cert'),
+                        cert_data=sig_data['x509_cert'],  # Pass the certificate data directly
                         key_data=sig_data.get('private_key'),
                         key_password=sig_data.get('key_password'),
-                        signature_id=sig_data.get('id'),
+                        signature_id='SigFrs',
                         role=sig_data.get('signer_role'),
                         name=sig_data.get('signer_name', 'Signataire'),
                         date=sig_data.get('date')
                     )
                 
-                # Add the signature section to the root
+                # Generate the signature XML and add it to the root
                 signature_section.to_xml(root)
+            
             # Backward compatibility: check for singular 'signature' key
             elif 'signature' in data and data['signature']:
-                self._add_signature(root, data['signature'])
+                sig_data = data['signature']
+                signature_section = SignatureSection()
+                
+                if 'x509_cert' in sig_data:
+                    # Pass the certificate data directly, not as a dictionary
+                    signature_section.add_signature(
+                        cert_data=sig_data['x509_cert'],  # Pass the certificate data directly
+                        key_data=sig_data.get('private_key'),
+                        key_password=sig_data.get('key_password'),
+                        signature_id='SigFrs',
+                        role=sig_data.get('signer_role'),
+                        name=sig_data.get('signer_name', 'Signataire'),
+                        date=sig_data.get('date')
+                    )
+                
+                # Generate the signature XML and add it to the root
+                signature_section.to_xml(root)
             
             # Convert to string with proper XML declaration and formatting
             xml_str = ET.tostring(root, encoding='UTF-8', xml_declaration=True)
             
             # Pretty print the XML
-            parsed = minidom.parseString(xml_str)
-            return parsed.toprettyxml(indent="  ", encoding='UTF-8').decode('utf-8')
+            xml = minidom.parseString(xml_str)
+            return xml.toprettyxml(indent="    ")
             
         except Exception as e:
             self.logger.error(f"Error generating TEIF XML: {str(e)}")

@@ -186,6 +186,55 @@ Le module `teif` gère la génération du XML conforme au standard TEIF 1.8.8 :
 - Support des éléments obligatoires et conditionnels
 - Gestion des formats de données spécifiques (dates, montants, etc.)
 
+## Signature XAdES
+
+Le projet prend en charge les signatures XAdES-BES pour les factures TEIF. La signature est générée à l'aide de la bibliothèque `signxml`.
+
+### Génération de la signature
+
+Pour générer une signature XAdES, vous devez fournir un certificat et une clé privée. Vous pouvez utiliser les outils de génération de certificats pour créer un certificat et une clé privée.
+
+```bash
+python scripts/generate_test_cert.py
+```
+
+Cela créera les fichiers suivants dans le répertoire `certs` :
+
+- `ca.crt` - Certificat de l'autorité de certification
+- `ca.key` - Clé privée de l'autorité de certification
+- `server.crt` - Certificat du serveur
+- `server.key` - Clé privée du serveur
+
+### Ajout de la signature à la facture
+
+Pour ajouter la signature à la facture, vous devez utiliser la classe `SignatureSection` du module `teif`.
+
+```python
+from src.teif.sections.signature import SignatureSection
+
+# Créez une section de signature
+signature = SignatureSection()
+
+# Ajoutez la signature avec le certificat et la clé privée
+with open('certs/server.crt', 'rb') as f:
+    cert_data = f.read()
+
+with open('certs/server.key', 'rb') as f:
+    key_data = f.read()
+
+signature.add_signature(
+    cert_data=cert_data,
+    key_data=key_data,
+    key_password=None,  # Ajoutez un mot de passe si la clé est chiffrée
+    signature_id='SIG-001',
+    role='supplier',
+    name='Votre nom d\'entreprise'
+)
+
+# Signez le document XML
+signature.sign_document(votre_facture_xml_root)
+```
+
 ## Contribution
 
 Les contributions sont les bienvenues ! Pour contribuer :
