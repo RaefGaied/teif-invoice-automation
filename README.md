@@ -148,59 +148,70 @@ L'architecture du projet est conçue pour assurer une séparation claire des res
 
 ```
 TTN/
-├── .github/                     # Configuration GitHub (CI/CD, templates d'issues, etc.)
-├── certs/                      # Certificats pour les signatures numériques
-│   ├── ca.crt                 # Certificat de l'autorité de certification
-│   ├── ca.key                 # Clé privée de l'AC
-│   ├── server.crt             # Certificat du serveur
-│   └── server.key             # Clé privée du serveur
-├── docs/                      # Documentation technique
+├── .github/
+│   └── workflows/
+│       └── main.yml
+├── certs/
+│   ├── ca.crt
+│   ├── ca.key
+│   ├── server.crt
+│   └── server.key
+├── docs/
 │   ├── TEIF_XML_Structure_Analysis.md
 │   ├── teif_xml_structure_example.xml
 │   └── XADES_SIGNATURE.md
-├── examples/                  # Exemples d'utilisation
+├── examples/
 │   └── sign_teif_invoice.py
-├── extracted_data/            # Données extraites des factures
-├── legacy/                    # Anciennes versions et scripts de transition
+├── extracted_data/
+├── legacy/
 │   ├── README.md
 │   ├── transform_invoice.py
 │   └── transform_invoice_simple.py
-├── output/                    # Fichiers générés
+├── output/
 │   └── complete_invoice.xml
-├── public/                    # Fichiers accessibles publiquement
-│   └── teif-invoices/         # Factures TEIF générées
-├── scripts/                   # Scripts utilitaires
+├── public/
+│   └── teif-invoices/
+├── scripts/
 │   └── generate_test_cert.py
-├── src/                       # Code source principal
-│   ├── cli/                   # Interface en ligne de commande
+├── src/
+│   ├── cli/
 │   │   ├── __init__.py
 │   │   └── main.py
-│   ├── extractors/            # Modules d'extraction
+│   ├── extractors/
 │   │   ├── __init__.py
 │   │   └── ...
-│   └── teif/                  # Génération TEIF
-│       ├── sections/          # Modules de génération XML
+│   └── teif/
+│       ├── sections/
 │       │   ├── __init__.py
-│       │   ├── amounts.py     # Gestion des montants
-│       │   ├── common.py      # Fonctions communes
-│       │   ├── header.py      # En-tête TEIF
-│       │   ├── lines.py       # Lignes de facture
-│       │   ├── partner.py     # Partenaires (vendeur/acheteur)
-│       │   ├── payment.py     # Paiements
-│       │   ├── references.py  # Références
-│       │   ├── signature.py   # Signatures électroniques
-│       │   └── taxes.py       # Gestion des taxes
-│       ├── utils/             # Utilitaires
+│       │   ├── amounts.py
+│       │   ├── common.py
+│       │   ├── header.py
+│       │   ├── lines.py
+│       │   ├── partner.py
+│       │   ├── payment.py
+│       │   ├── references.py
+│       │   ├── signature.py
+│       │   └── taxes.py
+│       ├── utils/
 │       │   └── __init__.py
 │       ├── __init__.py
-│       └── generator.py       # Générateur principal TEIF
-└── tests/                     # Tests unitaires et d'intégration
-    ├── test_data/             # Données de test
-    ├── test_output/           # Sorties des tests
-    ├── conftest.py            # Configuration des tests
-    ├── test_signature.py      # Tests de signature
-    ├── test_signature_fix.py  # Correctifs de tests de signature
-    └── test_*.py              # Autres fichiers de tests
+│       └── generator.py
+├── tests/
+│   ├── test_data/
+│   ├── test_output/
+│   ├── conftest.py
+│   ├── test_signature.py
+│   └── test_*.py
+├── .gitignore
+├── .pytest_cache/
+├── .vscode/
+├── .venv/
+├── .idea/
+├── main.py
+├── requirements.txt
+├── setup.py
+├── openssl.cnf
+└── debug_extraction.py
 ```
 
 ### Fichiers Racine Importants
