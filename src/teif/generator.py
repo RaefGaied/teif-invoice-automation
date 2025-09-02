@@ -151,7 +151,7 @@ class TEIFGenerator:
             # Add MessageRecipientIdentifier (if available)
             receiver_id = header_data.get('receiver_identifier', data.get('receiver_identifier'))
             if receiver_id:
-                receiver_elem = ET.SubElement(invoice_header, 'MessageRecipientIdentifier', 
+                receiver_elem = ET.SubElement(invoice_header, 'MessageRecieverIdentifier', 
                                            type=header_data.get('receiver_identifier_type', 'I-01'))
                 receiver_elem.text = str(receiver_id)
             
@@ -408,7 +408,7 @@ class TEIFGenerator:
                     tax_amount = line_amount * (float(tax_data.get('rate', 0)) / 100)
                     
                     tax_amount_details = ET.SubElement(tax, 'AmountDetails')
-                    tax_moa = ET.SubElement(tax_amount_details, 'Moa', amountTypeCode='TAX_AMOUNT')
+                    tax_moa = ET.SubElement(tax_amount_details, 'Moa', amountTypeCode='TAX_AMOUNT', currencyCodeList='ISO_4217')
                     
                     tax_amount_elem = ET.SubElement(tax_moa, 'Amount')
                     tax_amount_elem.set('currencyIdentifier', tax_data.get('currency', 'TND'))
@@ -460,7 +460,7 @@ class TEIFGenerator:
                 
                 # Add amount details
                 amount_details = ET.SubElement(tax, 'AmountDetails')
-                moa = ET.SubElement(amount_details, 'Moa', amountTypeCode='TAX_AMOUNT')
+                moa = ET.SubElement(amount_details, 'Moa', amountTypeCode='TAX_AMOUNT', currencyCodeList='ISO_4217')
                 
                 amount = ET.SubElement(moa, 'Amount')
                 amount.set('currencyIdentifier', tax_data.get('currency', 'TND'))
@@ -651,6 +651,7 @@ class TEIFGenerator:
         try:
             moa = ET.SubElement(parent, 'Moa')
             moa.set('amountTypeCode', code)
+            moa.set('currencyCodeList', 'ISO_4217')  # Add currency code list
             
             # Add amount element
             amount_elem = ET.SubElement(moa, 'Amount')

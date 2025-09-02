@@ -22,59 +22,61 @@ def generate_complete_teif_invoice():
         "controlling_agency": "TTN",
         # Seller information (vendeur)
         "seller": {
-            "identifier": "1234567AAM001",  
-            "identifier_type": "I-01",  
+            "identifier": "1234567AAM001",
             "name": "SOCIETE FOURNISSEUR SARL",
-            "legal_form": "SARL",
-            "vat_number": "12345678",
+            "vat_number": "12345678",  # Added required field
             "address": {
                 "street": "AVENUE HABIB BOURGUIBA",
                 "city": "TUNIS",
                 "postal_code": "1000",
-                "country_code": "TN",  
-                "lang": "FR"  
+                "country_code": "TN",
+                "lang": "FR"
             },
+            "references": [
+                {"type": "I-815", "value": "B1234567"},  # Registre de commerce
+                {"type": "I-01", "value": "12345678"},   # Matricule fiscal
+                {"type": "I-1602", "value": "12345678"}  # Numéro TVA
+            ],
             "contacts": [
                 {
-                    "function_code": "I-94",  
+                    "function_code": "I-94",
                     "name": "Service Commercial",
+                    "identifier": "COMM",
                     "communications": [
-                        {"type": "I-101", "value": "+216 70 000 000"},  
-                        {"type": "I-102", "value": "commercial@fournisseur.tn"}  
+                        {"type": "I-101", "value": "+216 70 000 000"},
+                        {"type": "I-102", "value": "commercial@fournisseur.tn"}
                     ]
                 }
-            ],
-            "references": [
-                {"type": "VA", "value": "12345678"}  
             ]
         },
 
         # Buyer information (acheteur)
         "buyer": {
-            "identifier": "9876543BBM002",  
-            "identifier_type": "I-01",  
+            "identifier": "9876543BBM002",
             "name": "SOCIETE CLIENTE SARL",
-            "legal_form": "SARL",
-            "vat_number": "87654321",
+            "vat_number": "87654321",  # Added required field
             "address": {
                 "street": "AVENUE MOHAMED V",
                 "city": "SOUSSE",
                 "postal_code": "4000",
-                "country_code": "TN",  
-                "lang": "FR"  
+                "country_code": "TN",
+                "lang": "FR"
             },
+            "references": [
+                {"type": "I-815", "value": "B9876543"},  # Registre de commerce
+                {"type": "I-01", "value": "87654321"},   # Matricule fiscal
+                {"type": "I-1602", "value": "87654321"}  # Numéro TVA
+            ],
             "contacts": [
                 {
-                    "function_code": "I-94",  
+                    "function_code": "I-94",
                     "name": "Service Achat",
+                    "identifier": "ACHAT",
                     "communications": [
-                        {"type": "I-101", "value": "+216 71 000 001"},  
-                        {"type": "I-104", "value": "achat@client.tn"}  
+                        {"type": "I-101", "value": "+216 71 000 001"},
+                        {"type": "I-104", "value": "achat@client.tn"}
                     ]
                 }
-            ],
-            "references": [
-                {"type": "VA", "value": "87654321"}  
             ]
         },
         
@@ -121,14 +123,15 @@ def generate_complete_teif_invoice():
                 "unit": "PCE",
                 "unit_price": 2.0,
                 "currency": "TND",
+                "currency_code_list": "ISO_4217",
                 "taxes": [
                     {
                         "code": "I-1602",
-                        "type_name": "TVA",
-                        "category": "S",
+                        "type": "TVA",
                         "rate": 19.0,
                         "amount": 0.38,
-                        "currency": "TND"
+                        "taxable_amount": 2.0,
+                        "currency_code_list": "ISO_4217"
                     }
                 ]
             },
@@ -141,21 +144,19 @@ def generate_complete_teif_invoice():
                 "unit": "PCE",
                 "unit_price": 100.0,
                 "currency": "TND",
-                "additional_info": [
-                    {
-                        "code": "DISCOUNT",
-                        "description": "Remise spéciale de 10%",
-                        "lang": "fr"
-                    }
-                ],
+                "currency_code_list": "ISO_4217",
+                "discount": {
+                    "amount": 10.0,
+                    "reason": "Remise spéciale de 10%"
+                },
                 "taxes": [
                     {
                         "code": "I-1602",
-                        "type_name": "TVA",
-                        "category": "S",
+                        "type": "TVA",
                         "rate": 19.0,
                         "amount": 17.1,
-                        "currency": "TND"
+                        "taxable_amount": 90.0,
+                        "currency_code_list": "ISO_4217"
                     }
                 ]
             },
@@ -168,14 +169,15 @@ def generate_complete_teif_invoice():
                 "unit": "KIT",
                 "unit_price": 500.0,
                 "currency": "TND",
+                "currency_code_list": "ISO_4217",
                 "taxes": [
                     {
                         "code": "I-1602",
-                        "type_name": "TVA",
-                        "category": "S",
+                        "type": "TVA",
                         "rate": 19.0,
                         "amount": 95.0,
-                        "currency": "TND"
+                        "taxable_amount": 500.0,
+                        "currency_code_list": "ISO_4217"
                     }
                 ],
                 "sub_lines": [
@@ -186,7 +188,8 @@ def generate_complete_teif_invoice():
                         "quantity": 1.0,
                         "unit": "PCE",
                         "unit_price": 200.0,
-                        "currency": "TND"
+                        "currency": "TND",
+                        "currency_code_list": "ISO_4217"
                     },
                     {
                         "item_identifier": "KIT-001-2",
@@ -195,9 +198,35 @@ def generate_complete_teif_invoice():
                         "quantity": 2.0,
                         "unit": "PCE",
                         "unit_price": 150.0,
-                        "currency": "TND"
+                        "currency": "TND",
+                        "currency_code_list": "ISO_4217"
                     }
                 ]
+            }
+        ],
+        
+        # Invoice MOA (Monetary Amounts) section
+        "invoice_moa": [
+            {
+                "amount_type_code": "I-181",
+                "amount": 2.000,
+                "description": "Total hors taxes",
+                "currency": "TND",
+                "currency_code_list": "ISO_4217"
+            },
+            {
+                "amount_type_code": "I-182",
+                "amount": 0.000,
+                "description": "Total des taxes",
+                "currency": "TND",
+                "currency_code_list": "ISO_4217"
+            },
+            {
+                "amount_type_code": "I-183",
+                "amount": 2.540,
+                "description": "Total toutes taxes comprises",
+                "currency": "TND",
+                "currency_code_list": "ISO_4217"
             }
         ],
         
@@ -205,30 +234,32 @@ def generate_complete_teif_invoice():
         "taxes": [
             {
                 "code": "I-1602",  
-                "type_name": "TVA",
+                "type": "TVA",
                 "category": "S",
                 "rate": 19.0,
-                "basis": 1000.0,  
-                "amount": 190.0,  
-                "currency": "TND"
+                "amount": 19.0,
+                "taxable_amount": 100.0,
+                "currency_code_list": "ISO_4217"
             },
             {
-                "code": "I-1603",  
-                "type_name": "Droit de timbre",
+                "code": "I-1601",  
+                "type": "Droit de timbre",
                 "rate": 1.0,
-                "amount": 10.0,
-                "currency": "TND"
+                "amount": 1.0,
+                "taxable_amount": 100.0,
+                "currency_code_list": "ISO_4217"
             }
         ],
         
         # Totals
         "totals": {
-            "total_without_tax": 1000.0,
-            "total_tax": 200.0,
-            "total_with_tax": 1200.0,
-            "prepaid_amount": 600.0,
-            "due_amount": 600.0,
-            "currency": "TND"
+            "capital": 2000000.0,  # I-179
+            "total_with_tax": 2.540,  # I-180
+            "total_without_tax": 2.000,  # I-176
+            "tax_base": 2.000,  # I-182
+            "tax_amount": 0.240,  # I-181
+            "currency": "TND",
+            "currency_code_list": "ISO_4217"
         },
         
         # Payment terms
@@ -488,7 +519,7 @@ def test_generate_complete_xml_with_signature():
             "seller": {
                 "name": "Vendeur Test",
                 "identifier": "123456789",
-                "vat_number": "12345678",
+                "vat_number": "12345678",  # Added required field
                 "address": {
                     "street": "123 Rue du Vendeur",
                     "city": "Tunis",
@@ -499,7 +530,7 @@ def test_generate_complete_xml_with_signature():
             "buyer": {
                 "name": "Acheteur Test",
                 "identifier": "987654321",
-                "vat_number": "87654321",
+                "vat_number": "87654321",  # Added required field
                 "address": {
                     "street": "456 Avenue de l'Acheteur",
                     "city": "Sousse",
@@ -612,7 +643,7 @@ def sample_invoice_data():
         "seller": {
             "name": "Vendor Inc.",
             "identifier": "12345678",  
-            "vat_number": "12345678",
+            "vat_number": "12345678",  
             "address": {
                 "street": "123 Vendor St",
                 "city": "Tunis",
@@ -623,7 +654,7 @@ def sample_invoice_data():
         "buyer": {
             "name": "Customer Co.",
             "identifier": "87654321",  
-            "vat_number": "87654321",
+            "vat_number": "87654321",  
             "address": {
                 "street": "456 Customer Ave",
                 "city": "Sousse",
@@ -708,4 +739,29 @@ def main():
         return 1
 
 if __name__ == "__main__":
-    main()
+    try:
+        # Run the main function and get the result
+        result = main()
+        
+        # Check if the main function returned an xml_string for validation
+        if result and hasattr(result, 'get') and 'xml_string' in result:
+            xml_string = result['xml_string']
+            try:
+                # Parse with lxml.etree for validation
+                parser = ET.XMLParser(remove_blank_text=True)
+                root = ET.fromstring(xml_string.encode('utf-8'), parser=parser)
+                print("✓ Validation réussie : Le fichier XML est valide")
+                exit(0)
+            except Exception as e:
+                print(f"✗ La validation a échoué: {str(e)}")
+                exit(1)
+            except IOError as e:
+                print(f"✗ Erreur lors de l'écriture du fichier: {str(e)}")
+                exit(1)
+        exit(0)
+            
+    except Exception as e:
+        print(f"ERREUR: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        exit(1)

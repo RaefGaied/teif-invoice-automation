@@ -65,63 +65,62 @@ class TaxesSection:
         Raises:
             ValueError: If tax data is invalid
         """
-        # Validation des champs obligatoires
-        required_fields = ['code', 'rate', 'amount', 'taxable_amount']
-        missing_fields = [field for field in required_fields if field not in tax_data]
+        # Validate required fields
+        required_fields = ['code', 'type', 'rate', 'amount']
+        for field in required_fields:
+            if field not in tax_data or tax_data[field] is None:
+                raise ValueError(f"Required tax field '{field}' is missing")
+
+        # Create InvoiceTaxDetails element
+        tax_details = ET.SubElement(parent, "InvoiceTaxDetails")
         
-        if missing_fields:
-            raise ValueError(
-                f"Champs de taxe manquants: {', '.join(missing_fields)}. "
-                "Les champs 'code', 'rate', 'amount' et 'taxable_amount' sont obligatoires."
-            )
+        # Add Tax element
+        tax_elem = ET.SubElement(tax_details, "Tax")
         
-        # Créer l'élément de taxe
-        tax = ET.SubElement(parent, 'Tax')
+        # Add TaxTypeName with code
+        tax_type = ET.SubElement(tax_elem, "TaxTypeName", code=tax_data['code'])
+        tax_type.text = tax_data['type']
         
-        # Ajouter le code de taxe
-        code = ET.SubElement(tax, 'TaxTypeCode')
-        code.text = str(tax_data['code'])
+        # Add TaxDetails with TaxRate
+        tax_detail = ET.SubElement(tax_elem, "TaxDetails")
+        ET.SubElement(tax_detail, "TaxRate").text = f"{float(tax_data['rate']):.1f}"
         
-        # Ajouter le type de taxe si fourni
-        if 'type' in tax_data and tax_data['type']:
-            tax_type = ET.SubElement(tax, 'TaxType')
-            tax_type.text = str(tax_data['type'])
+        # Add TaxableAmount if provided
+        if 'taxable_amount' in tax_data and tax_data['taxable_amount'] is not None:
+            tax_base = ET.SubElement(tax_detail, "TaxRateBasis")
+            tax_base.text = f"{float(tax_data['taxable_amount']):.2f}"
         
-        # Ajouter le taux de taxe
-        rate = ET.SubElement(tax, 'TaxRate')
-        rate.text = str(tax_data['rate'])
+        # Add AmountDetails with Moa for tax amount
+        amount_details = ET.SubElement(tax_details, "AmountDetails")
+        moa = ET.SubElement(amount_details, "Moa", 
+                          amountTypeCode="I-178",  # Montant de la taxe
+                          currencyCodeList="ISO_4217")
+        ET.SubElement(moa, "Amount", 
+                     currencyIdentifier=self.currency).text = f"{float(tax_data['amount']):.3f}"
         
-        # Ajouter la catégorie de taxe si fournie
+        # Add tax category if provided
         if 'tax_category' in tax_data and tax_data['tax_category']:
-            category = ET.SubElement(tax, 'TaxCategory')
-            category.text = str(tax_data['tax_category'])
+            ET.SubElement(tax_elem, "TaxCategory").text = tax_data['tax_category']
         
-        # Ajouter le motif d'exonération si fourni
+        # Add exemption reason if provided
         if 'exemption_reason' in tax_data and tax_data['exemption_reason']:
-            exemption = ET.SubElement(tax, 'TaxExemptionReason')
-            exemption.text = str(tax_data['exemption_reason'])
+            ET.SubElement(tax_elem, "TaxExemptionReason").text = tax_data['exemption_reason']
+
+    def build(self, parent: ET.Element) -> None:
+        """
+        Build the tax section and add it to the parent element.
         
-        # Créer l'élément Moa pour les montants
-        moa = ET.SubElement(tax, 'Moa', amountTypeCode='TOTAL_TAX')
+        Args:
+            parent: The parent XML element to add the tax section to
+        """
+        if not self.taxes:
+            return
+            
+        invoice_tax = ET.SubElement(parent, "InvoiceTax")
         
-        # Ajouter le montant de la taxe
-        amount = ET.SubElement(moa, 'Amount')
-        amount.set('currencyIdentifier', tax_data.get('currency', self.currency))
-        amount.text = str(tax_data['amount'])
-        
-        # Ajouter la description du montant
-        desc = ET.SubElement(moa, 'AmountDescription', lang='FR')
-        desc.text = 'Montant de la taxe'
-        
-        # Ajouter le montant taxable
-        taxable_moa = ET.SubElement(tax, 'Moa', amountTypeCode='TAXABLE_AMOUNT')
-        taxable_amount = ET.SubElement(taxable_moa, 'Amount')
-        taxable_amount.set('currencyIdentifier', tax_data.get('currency', self.currency))
-        taxable_amount.text = str(tax_data['taxable_amount'])
-        
-        taxable_desc = ET.SubElement(taxable_moa, 'AmountDescription', lang='FR')
-        taxable_desc.text = 'Montant taxable'
-    
+        for tax in self.taxes:
+            self.add_tax_detail(invoice_tax, tax)
+
     def to_xml(self, parent: ET.Element = None) -> ET.Element:
         """
         Generate the XML representation of the taxes section.
@@ -137,9 +136,7 @@ class TaxesSection:
         else:
             taxes_section = ET.SubElement(parent, 'TaxesSection')
         
-        # Ajouter chaque taxe
-        for tax_data in self.taxes:
-            self.add_tax_detail(taxes_section, tax_data)
+        self.build(taxes_section)
         
         return taxes_section
 

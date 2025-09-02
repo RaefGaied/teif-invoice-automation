@@ -349,10 +349,99 @@ def add_financial_institution(parent: ET.Element, fi_data: Dict[str, Any]) -> No
         for key, value in fi_data['attributes'].items():
             pyt_fii.set(key, str(value))
 
+def create_invoice_moa(parent: ET.Element, amounts: Dict[str, float], currency: str = 'TND') -> None:
+    """
+    Create the InvoiceMOA section with monetary amounts.
+    
+    Args:
+        parent: The parent XML element
+        amounts: Dictionary containing amount types and values
+        currency: Currency code (default: 'TND')
+    """
+    invoice_moa = ET.SubElement(parent, "InvoiceMoa")
+    
+    # Capital amount (I-179)
+    if 'capital' in amounts:
+        amount_details = ET.SubElement(invoice_moa, "AmountDetails")
+        moa = ET.SubElement(amount_details, "Moa", 
+                          amountTypeCode="I-179",
+                          currencyCodeList="ISO_4217")
+        ET.SubElement(moa, "Amount", currencyIdentifier=currency).text = f"{amounts['capital']:.3f}"
+    
+    # Total amount with tax (I-180)
+    if 'total_with_tax' in amounts:
+        amount_details = ET.SubElement(invoice_moa, "AmountDetails")
+        moa = ET.SubElement(amount_details, "Moa",
+                          amountTypeCode="I-180",
+                          currencyCodeList="ISO_4217")
+        ET.SubElement(moa, "Amount", currencyIdentifier=currency).text = f"{amounts['total_with_tax']:.3f}"
+        # Add amount description in French
+        amount_desc = ET.SubElement(moa, "AmountDescription", lang="fr")
+        amount_desc.text = "Montant total avec taxe"
+    
+    # Total amount without tax (I-176)
+    if 'total_without_tax' in amounts:
+        amount_details = ET.SubElement(invoice_moa, "AmountDetails")
+        moa = ET.SubElement(amount_details, "Moa",
+                          amountTypeCode="I-176",
+                          currencyCodeList="ISO_4217")
+        ET.SubElement(moa, "Amount", currencyIdentifier=currency).text = f"{amounts['total_without_tax']:.3f}"
+    
+    # Tax base amount (I-182)
+    if 'tax_base' in amounts:
+        amount_details = ET.SubElement(invoice_moa, "AmountDetails")
+        moa = ET.SubElement(amount_details, "Moa",
+                          amountTypeCode="I-182",
+                          currencyCodeList="ISO_4217")
+        ET.SubElement(moa, "Amount", currencyIdentifier=currency).text = f"{amounts['tax_base']:.3f}"
+    
+    # Tax amount (I-181)
+    if 'tax_amount' in amounts:
+        amount_details = ET.SubElement(invoice_moa, "AmountDetails")
+        moa = ET.SubElement(amount_details, "Moa",
+                          amountTypeCode="I-181",
+                          currencyCodeList="ISO_4217")
+        ET.SubElement(moa, "Amount", currencyIdentifier=currency).text = f"{amounts['tax_amount']:.3f}"
+
+def create_invoice_tax(parent: ET.Element, taxes: List[Dict[str, Any]], currency: str = 'TND') -> None:
+    """
+    Create the InvoiceTax section with tax details.
+    
+    Args:
+        parent: The parent XML element
+        taxes: List of tax dictionaries
+        currency: Currency code (default: 'TND')
+    """
+    invoice_tax = ET.SubElement(parent, "InvoiceTax")
+    
+    for tax in taxes:
+        tax_details = ET.SubElement(invoice_tax, "InvoiceTaxDetails")
+        
+        # Create Tax element
+        tax_elem = ET.SubElement(tax_details, "Tax")
+        
+        # Add tax type name with code
+        tax_type = ET.SubElement(tax_elem, "TaxTypeName", code=tax.get('code', 'I-1603'))
+        tax_type.text = tax.get('name', 'Autre taxe')
+        
+        # Add tax details
+        tax_detail = ET.SubElement(tax_elem, "TaxDetails")
+        ET.SubElement(tax_detail, "TaxRate").text = f"{tax.get('rate', 0):.1f}"
+        
+        # Add amount details
+        if 'amount' in tax:
+            amount_details = ET.SubElement(tax_details, "AmountDetails")
+            moa = ET.SubElement(amount_details, "Moa",
+                              amountTypeCode="I-178",  # Montant de la taxe
+                              currencyCodeList="ISO_4217")
+            ET.SubElement(moa, "Amount", currencyIdentifier=currency).text = f"{tax['amount']:.3f}"
+
 # Add to __all__ to make it available for import
 __all__ = [
     'add_payment_terms',
     'add_payment_term',
     'add_financial_institution',
+    'create_invoice_moa',
+    'create_invoice_tax',
     'PaymentSection'
 ]

@@ -61,18 +61,22 @@ def _add_nad_section(parent: ET.Element, partner_data: Dict[str, Any]) -> None:
     """
     nad = ET.SubElement(parent, "Nad")
     
-    # Identifiant du partenaire (obligatoire)
-    if 'identification' in partner_data:
-        ident = partner_data['identification']
-        partner_id = ET.SubElement(nad, "PartnerIdentifier", type=ident.get('type', 'I-01'))
-        partner_id.text = str(ident.get('value', ''))
+    # Ajouter l'identifiant du partenaire
+    if 'identifier' in partner_data:
+        identifier = ET.SubElement(
+            nad, 
+            "PartnerIdentifier",
+            type=partner_data.get('identifier_type', 'I-01')
+        )
+        identifier.text = str(partner_data['identifier'])
     
-    # Nom du partenaire (optionnel mais recommandé)
+    # Ajouter le nom du partenaire
     if 'name' in partner_data:
-        name_attrs = {}
-        if 'name_type' in partner_data:
-            name_attrs['nameType'] = partner_data['name_type']
-        name = ET.SubElement(nad, "PartnerName", **name_attrs)
+        name = ET.SubElement(
+            nad,
+            "PartnerName",
+            nameType="Qualification"
+        )
         name.text = str(partner_data['name'])
     
     # Adresse (obligatoire pour certains types de partenaires)
@@ -147,16 +151,17 @@ def _add_location_section(parent: ET.Element, location_data: Dict[str, Any]) -> 
 
 def _add_reference_section(parent: ET.Element, ref_data: Dict[str, str]) -> None:
     """
-    Ajoute une section de référence (RFF) au partenaire.
+    Ajoute une section de référence (RFF) au partenaire selon la norme TEIF 1.8.8.
+    
+    Args:
+        parent: L'élément parent XML
+        ref_data: Dictionnaire contenant les données de référence avec les clés:
+            - type: Type de référence (ex: 'I-815' pour Registre de commerce)
+            - value: Valeur de la référence
     """
     rff = ET.SubElement(parent, "RffSection")
     ref = ET.SubElement(rff, "Reference", refID=ref_data.get('type', ''))
     ref.text = str(ref_data.get('value', ''))
-    
-    # Date de référence (optionnelle)
-    if 'date' in ref_data:
-        ref_date = ET.SubElement(rff, "ReferenceDate")
-        ref_date.text = str(ref_data['date'])
 
 def _add_contact_section(parent: ET.Element, contact_data: Dict[str, Any]) -> None:
     """
@@ -170,53 +175,28 @@ def _add_contact_section(parent: ET.Element, contact_data: Dict[str, Any]) -> No
             - identifier: Optional contact identifier (max 6 chars)
             - communications: List of communication methods
     """
-    if not contact_data:
-        return
-        
-    cta_section = ET.SubElement(parent, "CtaSection")
-    
-    # Create contact element with function code
-    contact = ET.SubElement(cta_section, "Contact")
-    if 'function_code' in contact_data:
-        contact.set('functionCode', str(contact_data['function_code'])[:6])
-    
-    # Add contact identifier if provided
-    if 'identifier' in contact_data:
-        ident = ET.SubElement(contact, "ContactIdentifier")
-        ident.text = str(contact_data['identifier'])[:6]  # Max 6 chars
-    
-    # Add contact name if provided
-    if 'name' in contact_data:
-        name = ET.SubElement(contact, "ContactName")
-        name.text = str(contact_data['name'])[:200]  # Max 200 chars
-    
-    # Add communication methods if provided
+    # Créer une section Cta par moyen de communication
     if 'communications' in contact_data and isinstance(contact_data['communications'], list):
         for comm in contact_data['communications']:
-            _add_communication(contact, comm)
-
-def _add_communication(parent: ET.Element, comm_data: Dict[str, str]) -> None:
-    """
-    Add communication method to a contact.
-    
-    Args:
-        parent: The parent XML element
-        comm_data: Dictionary containing communication details with keys:
-            - type: Communication type code (from I10 referential)
-            - value: Communication value (phone, email, etc.)
-    """
-    if not comm_data or 'type' not in comm_data or 'value' not in comm_data:
-        return
-        
-    comm = ET.SubElement(parent, "Communication")
-    
-    # Add communication type
-    comm_type = ET.SubElement(comm, "ComMeansType")
-    comm_type.text = str(comm_data['type'])[:6]  # Max 6 chars
-    
-    # Add communication value
-    comm_addr = ET.SubElement(comm, "ComAdress")
-    comm_addr.text = str(comm_data['value'])[:200]  # Max 200 chars
+            cta = ET.SubElement(parent, "CtaSection")
+            contact = ET.SubElement(cta, "Contact", functionCode=contact_data.get('function_code', 'I-94'))
+            
+            # Ajouter l'identifiant du contact
+            if 'identifier' in contact_data:
+                contact_id = ET.SubElement(cta, "ContactIdentifier")
+                contact_id.text = str(contact_data['identifier'])
+            
+            # Ajouter le nom du contact
+            if 'name' in contact_data:
+                contact_name = ET.SubElement(cta, "ContactName")
+                contact_name.text = str(contact_data['name'])
+            
+            # Ajouter le moyen de communication
+            communication = ET.SubElement(cta, "Communication")
+            comm_type = ET.SubElement(communication, "ComMeansType")
+            comm_type.text = str(comm.get('type', ''))
+            comm_addr = ET.SubElement(communication, "ComAdress")
+            comm_addr.text = str(comm.get('value', ''))
 
 def add_seller_party(parent: ET.Element, seller_data: Dict[str, Any]) -> ET.Element:
     """
