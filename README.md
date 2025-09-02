@@ -115,11 +115,29 @@ Le format TEIF (Tunisian Electronic Invoice Format) suit une structure XML spéc
 
 Pour plus de détails, consultez le fichier `docs/TEIF_XML_Structure_Analysis.md`.
 
-## Structure du Projet
+## Architecture du Projet
 
-![Architecture du Générateur TEIF](c:\Users\raefg\Downloads\Untitled%20diagram%20_%20Mermaid%20Chart-2025-09-02-123710.png)
+### Vue d'ensemble
 
-### Légende du Diagramme
+L'architecture du projet est conçue pour assurer une séparation claire des responsabilités et une facilité de maintenance. Voici les principaux composants :
+
+#### 1. Diagramme d'Architecture Principal
+
+![Architecture du Générateur TEIF](https://github.com/user-attachments/assets/64f109ab-fc9c-4c1c-bfd0-37f81d51b088 "Vue d'ensemble de l'architecture")
+
+#### 2. Processus de Génération XML
+
+![Processus de génération XML](https://github.com/user-attachments/assets/0b07bdd3-41c5-4461-82f0-4c7594c2317f "Flux de génération XML")
+
+#### 3. Séquence des Étapes
+
+![Séquence des étapes](https://github.com/user-attachments/assets/325185fa-4e5f-4d72-aa92-5deaf4522e9c "Séquence d'exécution")
+
+#### 4. Structure XML
+
+![Structure XML](https://github.com/user-attachments/assets/2d1bbd60-fb42-4151-b87c-1277f4eed44b "Structure du document XML")
+
+### Légende des Diagrammes
 
 - **En rose** : Point d'entrée principal (CLI)
 - **En bleu clair** : Fichiers d'entrée/sortie
