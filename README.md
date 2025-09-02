@@ -116,43 +116,12 @@ Pour plus de détails, consultez le fichier `docs/TEIF_XML_Structure_Analysis.md
 
 ## Structure du Projet
 
-```mermaid
-graph TD
-    A[Interface CLI] -->|Commande| B[Générateur TEIF]
-    B --> C[Extracteur PDF]
-    B --> D[Générateur XML]
-    
-    subgraph "Génération TEIF"
-        D --> E[En-tête]
-        D --> F[Vendeur/Acheteur]
-        D --> G[Lignes de facture]
-        D --> H[Totaux]
-        D --> I[Signature XAdES]
-    end
-    
-    C -->|Données extraites| B
-    
-    subgraph "Entrées/Sorties"
-        J[Fichier PDF] --> C
-        B --> K[Fichier XML TEIF]
-    end
-    
-    subgraph "Configuration"
-        L[certificats/] --> I
-        M[.env] --> B
-    end
-    
-    style A fill:#f9f,stroke:#333,stroke-width:2px
-    style J fill:#9cf,stroke:#333
-    style K fill:#9cf,stroke:#333
-    style L fill:#cfc,stroke:#333
-    style M fill:#cfc,stroke:#333
-```
+![Architecture du Générateur TEIF](c:\Users\raefg\Downloads\Untitled%20diagram%20_%20Mermaid%20Chart-2025-09-02-123710.png)
 
 ### Légende du Diagramme
 
-- **En bleu clair** : Fichiers d'entrée/sortie
 - **En rose** : Point d'entrée principal (CLI)
+- **En bleu clair** : Fichiers d'entrée/sortie
 - **En vert clair** : Fichiers de configuration
 - **Boîtes blanches** : Composants principaux
 
