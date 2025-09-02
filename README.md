@@ -18,74 +18,246 @@ Ce projet Python extrait automatiquement les données de factures depuis des fic
 
 ## Structure TEIF XML
 
-Le générateur produit des fichiers XML conformes à la structure TEIF 1.8.8 avec les éléments suivants :
+Le format TEIF (Tunisian Electronic Invoice Format) suit une structure XML spécifique. Voici un aperçu des éléments principaux :
+
+### Structure de Base
 
 ```xml
-<TEIF xmlns="http://www.tradenet.com.tn/teif/invoice/1.0"
-      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-      xsi:schemaLocation="http://www.tradenet.com.tn/teif/invoice/1.0 teif_invoice_schema.xsd"
-      version="1.8.8"
-      controlingAgency="TTN">
+<TEIF>
+  <Header>
+    <DocumentType>INVOICE</DocumentType>
+    <DocumentNumber>FACT-2023-001</DocumentNumber>
+    <DocumentDate>2023-01-01</DocumentDate>
+    <Currency>DINAR TUNISIEN</Currency>
+    <CurrencyCode>TND</CurrencyCode>
+  </Header>
   
-  <!-- En-tête de la facture -->
-  <DocumentIdentifier>FACT-12345</DocumentIdentifier>
-  <DocumentType code="I-11">Facture</DocumentType>
+  <Seller>
+    <Name>NOM DU VENDEUR</Name>
+    <TaxIdentifier>
+      <ID>IDENTIFIANT FISCAL</ID>
+      <Type>FISCAL_NUMBER</Type>
+    </TaxIdentifier>
+  </Seller>
   
-  <!-- Section des partenaires -->
-  <PartnerSection>
-    <!-- Fournisseur -->
-    <Partner functionCode="I-62">
-      <Name nameType="Qualification">Nom du fournisseur</Name>
-      <TaxId>12345678A</TaxId>
-      <!-- Autres informations du fournisseur -->
-    </Partner>
+  <Buyer>
+    <Name>NOM DE L'ACHETEUR</Name>
+    <TaxIdentifier>...</TaxIdentifier>
+  </Buyer>
+  
+  <Invoice>
+    <InvoiceHeader>...</InvoiceHeader>
+    <InvoiceLines>
+      <Line>
+        <LineNumber>1</LineNumber>
+        <Item>
+          <Description>DESCRIPTION DE L'ARTICLE</Description>
+          <Quantity>1.000</Quantity>
+          <UnitPrice>100.000</UnitPrice>
+        </Item>
+        <Moa amountTypeCode="I-181" currencyCodeList="ISO_4217">
+          <Amount currencyIdentifier="TND">100.000</Amount>
+          <AmountDescription lang="FR">Montant hors taxes</AmountDescription>
+        </Moa>
+      </Line>
+    </InvoiceLines>
     
-    <!-- Client -->
-    <Partner functionCode="I-64">
-      <Name nameType="Qualification">Nom du client</Name>
-      <TaxId>87654321B</TaxId>
-      <!-- Autres informations du client -->
-    </Partner>
-  </PartnerSection>
+    <InvoiceTotals>
+      <Moa amountTypeCode="I-181" currencyCodeList="ISO_4217">
+        <Amount currencyIdentifier="TND">100.000</Amount>
+        <AmountDescription lang="FR">Total hors taxes</AmountDescription>
+      </Moa>
+      <Moa amountTypeCode="I-182" currencyCodeList="ISO_4217">
+        <Amount currencyIdentifier="TND">19.000</Amount>
+        <AmountDescription lang="FR">Total TVA</AmountDescription>
+      </Moa>
+      <Moa amountTypeCode="I-183" currencyCodeList="ISO_4217">
+        <Amount currencyIdentifier="TND">119.000</Amount>
+        <AmountDescription lang="FR">Total TTC</AmountDescription>
+      </Moa>
+    </InvoiceTotals>
+  </Invoice>
   
-  <!-- Corps de la facture -->
-  <InvoiceBody>
-    <!-- Lignes de facture -->
-    <Line>
-      <LineNumber>1</LineNumber>
-      <Item>
-        <Description>Description de l'article</Description>
-      </Item>
-      <Quantity unit="PCE">1.0</Quantity>
-      <Price>
-        <Amount amountTypeCode="I-183" currencyIdentifier="TND">100.000</Amount>
-      </Price>
-      <LineTotal>
-        <Amount amountTypeCode="I-171" currencyIdentifier="TND">100.000</Amount>
-      </LineTotal>
-    </Line>
-    
-    <!-- Totaux -->
-    <InvoiceMoa>
-      <Amount amountTypeCode="I-180" currencyIdentifier="TND">119.000</Amount>
-      <Amount amountTypeCode="I-176" currencyIdentifier="TND">100.000</Amount>
-      <Amount amountTypeCode="I-181" currencyIdentifier="TND">19.000</Amount>
-    </InvoiceMoa>
-    
-    <!-- Taxes -->
-    <InvoiceTax>
-      <TaxTypeName code="I-1602">TVA</TaxTypeName>
-      <TaxRate>19.0</TaxRate>
-      <TaxableAmount>100.000</TaxableAmount>
-      <TaxAmount>19.000</TaxAmount>
-    </InvoiceTax>
-  </InvoiceBody>
-  
-  <!-- Signature électronique -->
   <Signature>...</Signature>
-  
 </TEIF>
 ```
+
+### Points Importants
+
+1. **En-tête (Header)**
+   - Contient les informations de base du document
+   - Inclut le type de document, numéro, date et devise
+
+2. **Vendeur et Acheteur**
+   - Sections dédiées pour les informations des parties
+   - Inclut les identifiants fiscaux
+
+3. **Lignes de Facture**
+   - Chaque ligne contient un article ou service
+   - Inclut la description, quantité, prix unitaire et montant HT
+
+4. **Totaux**
+   - Montant HT
+   - Montant TVA
+   - Montant TTC
+   - Autres totaux spécifiques
+
+5. **Signature**
+   - Signature électronique XAdES
+   - Optionnelle selon le cas d'utilisation
+
+### Attributs Spéciaux
+
+- `currencyCodeList="ISO_4217"` : Obligatoire pour tous les éléments MOA
+- `amountTypeCode` : Code indiquant le type de montant (ex: I-181 pour HT, I-182 pour TVA, etc.)
+- `currencyIdentifier` : Code devise (TND pour Dinar Tunisien)
+
+Pour plus de détails, consultez le fichier `docs/TEIF_XML_Structure_Analysis.md`.
+
+## Structure du Projet
+
+```mermaid
+graph TD
+    A[Interface CLI] -->|Commande| B[Générateur TEIF]
+    B --> C[Extracteur PDF]
+    B --> D[Générateur XML]
+    
+    subgraph "Génération TEIF"
+        D --> E[En-tête]
+        D --> F[Vendeur/Acheteur]
+        D --> G[Lignes de facture]
+        D --> H[Totaux]
+        D --> I[Signature XAdES]
+    end
+    
+    C -->|Données extraites| B
+    
+    subgraph "Entrées/Sorties"
+        J[Fichier PDF] --> C
+        B --> K[Fichier XML TEIF]
+    end
+    
+    subgraph "Configuration"
+        L[certificats/] --> I
+        M[.env] --> B
+    end
+    
+    style A fill:#f9f,stroke:#333,stroke-width:2px
+    style J fill:#9cf,stroke:#333
+    style K fill:#9cf,stroke:#333
+    style L fill:#cfc,stroke:#333
+    style M fill:#cfc,stroke:#333
+```
+
+### Légende du Diagramme
+
+- **En bleu clair** : Fichiers d'entrée/sortie
+- **En rose** : Point d'entrée principal (CLI)
+- **En vert clair** : Fichiers de configuration
+- **Boîtes blanches** : Composants principaux
+
+## Structure du Projet
+
+```
+TTN/
+├── .github/                     # Configuration GitHub (CI/CD, templates d'issues, etc.)
+├── certs/                      # Certificats pour les signatures numériques
+│   ├── ca.crt                 # Certificat de l'autorité de certification
+│   ├── ca.key                 # Clé privée de l'AC
+│   ├── server.crt             # Certificat du serveur
+│   └── server.key             # Clé privée du serveur
+├── docs/                      # Documentation technique
+│   ├── TEIF_XML_Structure_Analysis.md
+│   ├── teif_xml_structure_example.xml
+│   └── XADES_SIGNATURE.md
+├── examples/                  # Exemples d'utilisation
+│   └── sign_teif_invoice.py
+├── extracted_data/            # Données extraites des factures
+├── legacy/                    # Anciennes versions et scripts de transition
+│   ├── README.md
+│   ├── transform_invoice.py
+│   └── transform_invoice_simple.py
+├── output/                    # Fichiers générés
+│   └── complete_invoice.xml
+├── public/                    # Fichiers accessibles publiquement
+│   └── teif-invoices/         # Factures TEIF générées
+├── scripts/                   # Scripts utilitaires
+│   └── generate_test_cert.py
+├── src/                       # Code source principal
+│   ├── cli/                   # Interface en ligne de commande
+│   │   ├── __init__.py
+│   │   └── main.py
+│   ├── extractors/            # Modules d'extraction
+│   │   ├── __init__.py
+│   │   └── ...
+│   └── teif/                  # Génération TEIF
+│       ├── sections/          # Modules de génération XML
+│       │   ├── __init__.py
+│       │   ├── amounts.py     # Gestion des montants
+│       │   ├── common.py      # Fonctions communes
+│       │   ├── header.py      # En-tête TEIF
+│       │   ├── lines.py       # Lignes de facture
+│       │   ├── partner.py     # Partenaires (vendeur/acheteur)
+│       │   ├── payment.py     # Paiements
+│       │   ├── references.py  # Références
+│       │   ├── signature.py   # Signatures électroniques
+│       │   └── taxes.py       # Gestion des taxes
+│       ├── utils/             # Utilitaires
+│       │   └── __init__.py
+│       ├── __init__.py
+│       └── generator.py       # Générateur principal TEIF
+└── tests/                     # Tests unitaires et d'intégration
+    ├── test_data/             # Données de test
+    ├── test_output/           # Sorties des tests
+    ├── conftest.py            # Configuration des tests
+    ├── test_signature.py      # Tests de signature
+    ├── test_signature_fix.py  # Correctifs de tests de signature
+    └── test_*.py              # Autres fichiers de tests
+```
+
+### Fichiers Racine Importants
+- `main.py` : Point d'entrée principal de l'application
+- `requirements.txt` : Dépendances du projet
+- `setup.py` : Configuration du package Python
+- `openssl.cnf` : Configuration OpenSSL pour la génération de certificats
+- `debug_extraction.py` : Utilitaire de débogage pour l'extraction
+
+### Fichiers de Configuration
+- `.gitignore` : Fichiers ignorés par Git
+- `.pytest_cache/` : Cache des tests
+- `.vscode/` : Configuration VS Code
+- `.venv/` : Environnement virtuel Python
+- `.idea/` : Configuration PyCharm/IntelliJ
+
+## Description des Composants Clés
+
+1. **Générateur TEIF** (`src/teif/generator.py`)
+   - Classe principale pour la génération de documents TEIF
+   - Gère la création de la structure XML
+   - Coordonne les différents modules de génération
+
+2. **Modules de Sections** (`src/teif/sections/`)
+   - `header.py`: Gestion de l'en-tête TEIF et des métadonnées
+   - `partner.py`: Gestion des parties (vendeur, acheteur, livraison)
+   - `lines.py`: Génération des lignes de facture
+   - `taxes.py`: Calcul et application des taxes
+   - `payment.py`: Conditions et moyens de paiement
+   - `amounts.py`: Gestion des montants et devises
+   - `common.py`: Fonctions utilitaires partagées
+
+3. **Interface en Ligne de Commande** (`src/cli/`)
+   - Point d'entrée pour l'utilisation en ligne de commande
+   - Gestion des arguments et options
+   - Gestion des erreurs et journalisation
+
+4. **Tests** (`tests/`)
+   - Tests unitaires pour chaque composant
+   - Tests d'intégration
+   - Données de test et résultats attendus
+
+5. **Utilitaires** (`scripts/`)
+   - Scripts pour la gestion des certificats
+   - Outils de développement
 
 ## Installation
 
@@ -139,35 +311,6 @@ python test_teif_generator.py tests/sample_invoice.pdf
 python main.py --help
 ```
 
-## Structure du projet
-
-```
-TTN/
-├── main.py                        # Point d'entrée principal
-├── test_teif_generator.py         # Script de test du générateur
-├── requirements.txt               # Dépendances
-├── README.md                      # Documentation
-├── docs/                          # Documentation technique
-│   └── TEIF_XML_Structure_Analysis.md  # Analyse de la structure TEIF
-├── src/                           # Code source
-│   ├── __init__.py
-│   ├── extractors/                # Modules d'extraction
-│   │   ├── __init__.py
-│   │   ├── base_extractor.py      # Classe de base pour l'extraction
-│   │   ├── pdf_extractor.py       # Extraction depuis PDF
-│   │   └── amount_validator.py    # Validation des montants
-│   ├── teif/                      # Génération TEIF
-│   │   ├── __init__.py
-│   │   └── generator.py           # Générateur XML TEIF
-│   └── cli/                       # Interface ligne de commande
-│       ├── __init__.py
-│       └── main.py                # Gestion des arguments CLI
-├── public/                        # Fichiers de sortie
-│   └── teif-invoices/             # XMLs TEIF générés
-└── tests/                         # Tests
-    └── sample_invoice.pdf         # Exemple de facture pour les tests
-```
-
 ## Architecture technique
 
 ### Extraction des données
@@ -201,7 +344,7 @@ python scripts/generate_test_cert.py
 Cela créera les fichiers suivants dans le répertoire `certs` :
 
 - `ca.crt` - Certificat de l'autorité de certification
-- `ca.key` - Clé privée de l'autorité de certification
+- `ca.key` - Clé privée de l'AC
 - `server.crt` - Certificat du serveur
 - `server.key` - Clé privée du serveur
 
