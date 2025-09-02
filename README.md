@@ -364,7 +364,7 @@ Ce projet est sous licence MIT. Voir le fichier `LICENSE` pour plus de détails.
 
 ## Auteur
 
-- **Votre Nom** - [@votrepseudo](https://github.com/votrepseudo)
+- **Raef Gaied**
 
 ## Remerciements
 
