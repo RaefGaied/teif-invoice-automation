@@ -82,6 +82,7 @@ Le format TEIF (Tunisian Electronic Invoice Format) suit une structure XML spéc
 </TEIF>
 ```
 
+
 ### Points Importants
 
 1. **En-tête (Header)**
@@ -119,12 +120,21 @@ Pour plus de détails, consultez le fichier `docs/TEIF_XML_Structure_Analysis.md
 <img width="3840" height="2654" alt="Untitled diagram _ Mermaid Chart-2025-09-02-123710" src="https://github.com/user-attachments/assets/64f109ab-fc9c-4c1c-bfd0-37f81d51b088" />
 
 
+<img width="2076" height="1155" alt="Diagramme 1 – Processus de génération XML" src="https://github.com/user-attachments/assets/0b07bdd3-41c5-4461-82f0-4c7594c2317f" />
+<img width="2076" height="1155" alt="Diagramme 2 – Séquence des étapes" src="https://github.com/user-attachments/assets/325185fa-4e5f-4d72-aa92-5deaf4522e9c" />
+<img width="2076" height="1155" alt="Diagramme 3 – Structure XML" src="https://github.com/user-attachments/assets/2d1bbd60-fb42-4151-b87c-1277f4eed44b" />
+
+
+
+
+
 ### Légende du Diagramme
 
 - **En rose** : Point d'entrée principal (CLI)
 - **En bleu clair** : Fichiers d'entrée/sortie
 - **En vert clair** : Fichiers de configuration
 - **Boîtes blanches** : Composants principaux
+
 
 ## Structure du Projet
 
