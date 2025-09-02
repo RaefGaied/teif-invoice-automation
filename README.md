@@ -115,38 +115,16 @@ Le format TEIF (Tunisian Electronic Invoice Format) suit une structure XML spéc
 
 Pour plus de détails, consultez le fichier `docs/TEIF_XML_Structure_Analysis.md`.
 
-## Architecture du Projet
+## Structure du Projet
 
-### 1. Vue d'ensemble du Générateur TEIF
+![Architecture du Générateur TEIF](c:\Users\raefg\Downloads\Untitled%20diagram%20_%20Mermaid%20Chart-2025-09-02-123710.png)
 
-<img width="100%" alt="Vue d'ensemble du Générateur TEIF" src="https://github.com/user-attachments/assets/64f109ab-fc9c-4c1c-bfd0-37f81d51b088" style="max-width: 800px; display: block; margin: 0 auto;"/>
+### Légende du Diagramme
 
-*Figure 1 : Architecture globale du générateur TEIF*
-
-### 2. Processus de Génération XML
-
-<img width="100%" alt="Processus de génération XML" src="https://github.com/user-attachments/assets/0b07bdd3-41c5-4461-82f0-4c7594c2317f" style="max-width: 800px; display: block; margin: 20px auto;"/>
-
-*Figure 2 : Flux du processus de génération XML*
-
-### 3. Séquence des Étapes
-
-<img width="100%" alt="Séquence des étapes" src="https://github.com/user-attachments/assets/325185fa-4e5f-4d72-aa92-5deaf4522e9c" style="max-width: 800px; display: block; margin: 20px auto;"/>
-
-*Figure 3 : Séquence détaillée des étapes de traitement*
-
-### 4. Structure XML TEIF
-
-<img width="100%" alt="Structure XML TEIF" src="https://github.com/user-attachments/assets/2d1bbd60-fb42-4151-b87c-1277f4eed44b" style="max-width: 800px; display: block; margin: 20px auto;"/>
-
-*Figure 4 : Structure hiérarchique du document XML TEIF*
-
-### Légende des Diagrammes
-
-- **Diagramme 1** : Vue d'ensemble montrant les composants principaux et leurs interactions
-- **Diagramme 2** : Flux de processus de la conversion PDF vers XML TEIF
-- **Diagramme 3** : Séquence chronologique des opérations
-- **Diagramme 4** : Structure hiérarchique du document XML final
+- **En rose** : Point d'entrée principal (CLI)
+- **En bleu clair** : Fichiers d'entrée/sortie
+- **En vert clair** : Fichiers de configuration
+- **Boîtes blanches** : Composants principaux
 
 ## Structure du Projet
 
