@@ -116,7 +116,8 @@ Pour plus de détails, consultez le fichier `docs/TEIF_XML_Structure_Analysis.md
 
 ## Structure du Projet
 
-![Architecture du Générateur TEIF](c:\Users\raefg\Downloads\Untitled%20diagram%20_%20Mermaid%20Chart-2025-09-02-123710.png)
+<img width="3840" height="2654" alt="Untitled diagram _ Mermaid Chart-2025-09-02-123710" src="https://github.com/user-attachments/assets/64f109ab-fc9c-4c1c-bfd0-37f81d51b088" />
+
 
 ### Légende du Diagramme
 
