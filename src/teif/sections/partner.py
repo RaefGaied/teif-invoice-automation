@@ -4,7 +4,8 @@ Module pour la gestion des sections partenaires (vendeur, acheteur, livraison) d
 Ce module implémente les sections liées aux parties impliquées dans la transaction selon le standard TEIF 1.8.8.
 """
 from typing import Dict, Any, List, Optional, Union
-import xml.etree.ElementTree as ET
+#import xml.etree.ElementTree as ET
+from lxml import etree as ET
 
 __all__ = [
     'create_partner_section',

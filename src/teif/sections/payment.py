@@ -2,7 +2,9 @@
 Module pour la gestion dynamique des conditions de paiement TEIF.
 """
 from typing import Dict, Any, List, Optional, Union
-import xml.etree.ElementTree as ET
+#import xml.etree.ElementTree as ET
+from lxml import etree as ET
+
 from datetime import datetime, date
 
 class PaymentSection:

@@ -2,7 +2,8 @@
 Module pour la gestion des taxes dans les documents TEIF.
 """
 from typing import Dict, Any, List, Optional
-import xml.etree.ElementTree as ET
+#import xml.etree.ElementTree as ET
+from lxml import etree as ET
 
 class TaxesSection:
     """

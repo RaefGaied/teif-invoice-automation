@@ -2,7 +2,8 @@
 Module pour la gestion des références TTN et autres références de documents.
 """
 from typing import Dict, Any, List, Optional, Union
-import xml.etree.ElementTree as ET
+#import xml.etree.ElementTree as ET
+from lxml import etree as ET
 import base64
 
 

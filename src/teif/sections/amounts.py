@@ -2,7 +2,8 @@
 Module pour la gestion des montants et des sections monétaires dans les documents TEIF.
 """
 from typing import Dict, Any, List, Optional
-import xml.etree.ElementTree as ET
+#import xml.etree.ElementTree as ET
+from lxml import etree as ET
 
 
 def add_invoice_moa(parent: ET.Element, moa_data: Dict[str, Any]) -> None:

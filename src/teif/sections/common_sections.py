@@ -2,7 +2,8 @@
 Module pour les sections communes utilisées dans différents contextes du document TEIF.
 """
 from typing import Dict, Any, Optional, List
-import xml.etree.ElementTree as ET
+#import xml.etree.ElementTree as ET
+from lxml import etree as ET
 
 def create_nad_section(parent: ET.Element, nad_data: Dict[str, Any]) -> ET.Element:
     """

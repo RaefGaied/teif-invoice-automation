@@ -2,7 +2,8 @@
 Module for handling TEIF 1.8.8 invoice lines with required and optional elements.
 """
 from typing import Dict, Any, List, Optional, Union
-import xml.etree.ElementTree as ET
+#import xml.etree.ElementTree as ET
+from lxml import etree as ET
 
 
 class ItemDescription:

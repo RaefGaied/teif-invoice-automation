@@ -8,7 +8,9 @@ information for the TEIF XML structure.
 from typing import Dict, Any, List, Optional, Union
 from datetime import datetime
 import uuid
-import xml.etree.ElementTree as ET
+#import xml.etree.ElementTree as ET
+from lxml import etree as ET
+
 from ..utils.validators import (
     validate_required_fields,
     validate_date_format,
@@ -294,33 +296,36 @@ def validate_tax_identifier(tax_id: str) -> None:
     # Additional validation for secondary establishments
     if category_code == 'E' and establishment == '000':
         raise ValueError("Un établissement secondaire doit avoir un numéro différent de 000")
-
+        
 def create_teif_root(version: str = "1.8.8") -> ET.Element:
     """
-    Create the root TEIF element with proper attributes.
+    Create the root TEIF element with proper attributes and namespaces.
     
     Args:
         version: TEIF version (default: "1.8.8")
         
     Returns:
-        ET.Element: Root TEIF element with proper XML declaration
+        ET.Element: Root TEIF element with proper XML declaration and namespaces
     """
-    # Create XML with proper declaration
-    ET.register_namespace('', 'http://www.tn.gov/teif')
-    ET.register_namespace('xsi', 'http://www.w3.org/2001/XMLSchema-instance')
-    
-    # Create root element with attributes
-    root = ET.Element("TEIF", 
-                     attrib={
-                         "controlingAgency": "TTN",
-                         "version": version
-                     })
-    
-    # Add schema location
-    root.set("{http://www.w3.org/2001/XMLSchema-instance}schemaLocation", 
-            "http://www.tn.gov/teif TEIF_1.8.8.xsd")
+    # Create root element with default namespace
+    root = ET.Element(
+        "TEIF",
+        nsmap={
+            None: 'http://www.tn.gov/teif',  # Default namespace
+            'xsi': 'http://www.w3.org/2001/XMLSchema-instance',
+            'ds': 'http://www.w3.org/2000/09/xmldsig#',
+            'xades': 'http://uri.etsi.org/01903/v1.3.2#'
+        },
+        attrib={
+            "controlingAgency": "TTN",
+            "version": version,
+            "{http://www.w3.org/2001/XMLSchema-instance}schemaLocation": 
+                "http://www.tn.gov/teif TEIF_1.8.8.xsd"
+        }
+    )
     
     return root
+
 
 def create_invoice_header(parent: ET.Element, 
                          sender_identifier: str,

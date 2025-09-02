@@ -1,23 +1,16 @@
-from xml.etree import ElementTree as ET
+import lxml.etree as ET
 from typing import Dict, Any, List, Optional, Union
 from datetime import datetime, timedelta
 import logging
 import re
-from xml.dom import minidom
+import os
+from decimal import Decimal
 
-# Import section modules using relative imports
-from .sections.header import (
-    HeaderSection, 
-    create_header_element, 
-    create_bgm_element, 
-    create_dtm_element,
-    create_teif_root
-)
-from .sections.partner import PartnerSection, add_seller_party, add_buyer_party, add_delivery_party
-from .sections.amounts import add_invoice_moa
-from .sections.lines import LinSection, LinItem, add_invoice_lines
-from .sections.signature import SignatureSection, create_signature, add_signature
-from .sections.payment import add_payment_terms, add_financial_institution
+# Import local modules
+from .sections.header import create_teif_root, create_bgm_element
+from .sections.signature import SignatureSection
+from .sections.partner import add_seller_party, add_buyer_party, add_delivery_party
+
 
 class TEIFGenerator:
     """Générateur de documents XML conformes à la norme TEIF 1.8.8."""
@@ -112,56 +105,23 @@ class TEIFGenerator:
             
             # Add signatures if available
             if 'signatures' in data and data['signatures']:
-                from .sections.signature import SignatureSection, create_signature, add_signature
+                signature_data = data['signatures'][0]
                 
-                # Create a signature section
-                signature_section = SignatureSection()
-                
-                # We'll only use the first signature as per XAdES spec
-                sig_data = data['signatures'][0]
-                
-                # Add certificate and key if provided
-                if 'x509_cert' in sig_data:
-                    # Pass the certificate data directly, not as a dictionary
-                    signature_section.add_signature(
-                        cert_data=sig_data['x509_cert'],  # Pass the certificate data directly
-                        key_data=sig_data.get('private_key'),
-                        key_password=sig_data.get('key_password'),
-                        signature_id='SigFrs',
-                        role=sig_data.get('signer_role'),
-                        name=sig_data.get('signer_name', 'Signataire'),
-                        date=sig_data.get('date')
-                    )
-                
-                # Generate the signature XML and add it to the root
-                signature_section.to_xml(root)
+                # Add the signature if provided
+                if signature_data:
+                    self._add_signature(root, signature_data)
             
             # Backward compatibility: check for singular 'signature' key
             elif 'signature' in data and data['signature']:
-                sig_data = data['signature']
-                signature_section = SignatureSection()
+                signature_data = data['signature']
                 
-                if 'x509_cert' in sig_data:
-                    # Pass the certificate data directly, not as a dictionary
-                    signature_section.add_signature(
-                        cert_data=sig_data['x509_cert'],  # Pass the certificate data directly
-                        key_data=sig_data.get('private_key'),
-                        key_password=sig_data.get('key_password'),
-                        signature_id='SigFrs',
-                        role=sig_data.get('signer_role'),
-                        name=sig_data.get('signer_name', 'Signataire'),
-                        date=sig_data.get('date')
-                    )
-                
-                # Generate the signature XML and add it to the root
-                signature_section.to_xml(root)
+                # Add the signature if provided
+                if signature_data:
+                    self._add_signature(root, signature_data)
             
-            # Convert to string with proper XML declaration and formatting
-            xml_str = ET.tostring(root, encoding='UTF-8', xml_declaration=True)
-            
-            # Pretty print the XML
-            xml = minidom.parseString(xml_str)
-            return xml.toprettyxml(indent="    ")
+            # Use our XML serialization utility
+            from .utils.xml_utils import serialize_xml
+            return serialize_xml(root)
             
         except Exception as e:
             self.logger.error(f"Error generating TEIF XML: {str(e)}")
@@ -213,6 +173,7 @@ class TEIFGenerator:
     def _add_bgm_section(self, parent: ET.Element, bgm_data: Dict[str, Any]) -> None:
         """Add BGM (Beginning of Message) section."""
         try:
+            from .sections.header import create_bgm_element
             create_bgm_element(parent, bgm_data)
         except Exception as e:
             self.logger.error(f"Error adding BGM section: {str(e)}")
@@ -277,7 +238,7 @@ class TEIFGenerator:
                 - discount_due_date: Discount due date (optional)
         """
         try:
-            from src.teif.sections.payment import add_payment_terms
+            from .sections.payment import add_payment_terms
             add_payment_terms(parent, payment_terms_data)
         except Exception as e:
             self.logger.error(f"Error adding payment terms: {str(e)}")
@@ -650,36 +611,32 @@ class TEIFGenerator:
                 - date: Signature date (optional, default: now)
         """
         try:
-            if not signature_data.get('x509_cert'):
-                self.logger.warning("No certificate data provided for signature")
+            if not signature_data or 'x509_cert' not in signature_data:
+                self.logger.warning("No certificate provided for signature. Skipping signature section.")
                 return
-                
-            # Prepare certificate data
-            cert_data = {
-                'cert': signature_data['x509_cert'],
-                'key': signature_data.get('private_key'),
-                'password': signature_data.get('key_password')
-            }
+
+            # Create signature section
+            signature_section = SignatureSection()
             
-            # Prepare signature metadata
-            sig_metadata = {
-                'id': signature_data.get('id', f'sig-{len(parent.findall(".//Signature")) + 1}'),
-                'role': signature_data.get('signer_role', 'Signer'),
-                'name': signature_data.get('signer_name', 'Signataire'),
-                'date': signature_data.get('date')
-            }
+            # Add the signature with certificate and optional private key
+            signature_section.add_signature(
+                cert_data=signature_data['x509_cert'],
+                key_data=signature_data.get('private_key'),
+                key_password=signature_data.get('key_password'),
+                signature_id=signature_data.get('id', 'SigFrs'),
+                role=signature_data.get('signer_role'),
+                name=signature_data.get('signer_name', 'Signataire'),
+                date=signature_data.get('date')
+            )
             
-            # Add the signature using the imported function
-            from .sections.signature import add_signature
-            
-            # Créer un élément SignatureSection et ajouter la signature
-            signature_section = ET.SubElement(parent, 'SignatureSection')
-            add_signature(signature_section, cert_data, sig_metadata)
+            # Generate the signature XML and add it to the root
+            signature_element = signature_section.to_xml(parent)
+            parent.append(signature_element)
             
         except Exception as e:
             self.logger.error(f"Error adding signature: {str(e)}")
-            # Ne pas lever l'exception pour permettre la génération du document sans signature
-            # raise
+            raise
+
     def _add_moa(self, parent: ET.Element, code: str, amount: float, description: str, currency: str = 'TND') -> None:
         """
         Add a monetary amount element to the parent element.
