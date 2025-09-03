@@ -1,4 +1,4 @@
-# TEIF Converter - Architecture & Workflow Documentation
+# TEIF Converter - Complete Architecture Documentation
 
 ## Main Workflow
 
@@ -285,3 +285,23 @@ flowchart TD
 - **Generators**: TEIF XML section generation
 - **Validators**: Data and XML structure validation
 - **CLI Interface**: Command-line tool for batch processing
+
+## Technical Implementation
+
+### Signature Section Components
+- **Namespace Management**: Proper XML namespace handling for ds: and xades: prefixes
+- **Certificate Handling**: X.509 certificate loading and validation
+- **Digest Calculation**: SHA-256 hash computation for document integrity
+- **Canonicalization**: XML-EXC-C14N for consistent XML representation
+- **XPath Transformations**: Document reference filtering and processing
+
+### Data Flow Architecture
+- **Input Layer**: PDF files, configuration, and certificates
+- **Processing Layer**: Extraction, normalization, and validation
+- **Generation Layer**: TEIF XML structure creation
+- **Security Layer**: XAdES-B signature application
+- **Output Layer**: Signed TEIF XML compliant with TTN standards
+\`\`\`
+
+```typescriptreact file="teif-architecture-diagram.md" isDeleted="true"
+...deleted...
