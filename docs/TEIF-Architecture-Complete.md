@@ -35,12 +35,7 @@ L'architecture du projet est conçue pour assurer une séparation claire des res
 
 <img width="3840" height="2654" alt="main wokflow" src="https://github.com/user-attachments/assets/e125c0dc-6a4a-4c48-8b21-e999a6658f04" />
 
-<img width="3840" height="2654" alt="main wokflow" src="https://github.com/user-attachments/assets/e125c0dc-6a4a-4c48-8b21-e999a6658f04" />
-
-
 ## Detailed Component Architecture
-
-<img width="3840" height="1523" alt="Detailed Component Architecture" src="https://github.com/user-attachments/assets/ba503358-b287-4743-8543-ec25e9bd1af8" />
 
 <img width="3840" height="1523" alt="Detailed Component Architecture" src="https://github.com/user-attachments/assets/ba503358-b287-4743-8543-ec25e9bd1af8" />
 
@@ -48,19 +43,11 @@ L'architecture du projet est conçue pour assurer une séparation claire des res
 
 <img width="3840" height="2678" alt="TEIF XML Structure Flow" src="https://github.com/user-attachments/assets/a0f4b888-7210-43ae-92e3-55eea854d36c" />
 
-<img width="3840" height="2678" alt="TEIF XML Structure Flow" src="https://github.com/user-attachments/assets/a0f4b888-7210-43ae-92e3-55eea854d36c" />
-
-
 ## Signature Generation Process
 
 <img width="3840" height="2990" alt="Signature Generation Process" src="https://github.com/user-attachments/assets/ac16648b-6f0d-4c25-a445-eca2c663c9e5" />
 
-<img width="3840" height="2990" alt="Signature Generation Process" src="https://github.com/user-attachments/assets/ac16648b-6f0d-4c25-a445-eca2c663c9e5" />
-
-
 ## Data Flow & Validation
-
-<img width="869" height="3840" alt="Data Flow   Validation" src="https://github.com/user-attachments/assets/bf20c4d1-288a-4e6b-b2ae-18d977ed0248" />
 
 <img width="869" height="3840" alt="Data Flow   Validation" src="https://github.com/user-attachments/assets/bf20c4d1-288a-4e6b-b2ae-18d977ed0248" />
 
