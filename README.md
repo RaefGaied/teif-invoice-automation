@@ -1,4 +1,63 @@
-# PDF to TEIF Converter
+<div align="center">
+  <h1>🔄 TEIF Invoice Converter</h1>
+  <h3>Conversion Automatique de Factures PDF vers le Format TEIF 1.8.8</h3>
+  <img src="https://img.shields.io/badge/Version-1.0.0-blue" alt="Version">
+  <img src="https://img.shields.io/badge/Python-3.7+-blue" alt="Python Version">
+  <img src="https://img.shields.io/badge/License-MIT-green" alt="License">
+</div>
+
+<div align="center">
+  <img src="https://via.placeholder.com/800x200/2a2a72/ffffff?text=TEIF+Converter" alt="TEIF Converter Logo" width="100%">
+  <p><em>Solution professionnelle de conversion de factures électroniques conforme aux normes tunisiennes</em></p>
+</div>
+
+
+## Table of Contents
+
+- [Description](#description)
+  - [Fonctionnalités principales](#fonctionnalités-principales)
+- [Structure TEIF XML](#structure-teif-xml)
+  - [Structure de Base](#structure-de-base)
+  - [Points Importants](#points-importants)
+- [Architecture du Projet](#architecture-du-projet)
+  - [Vue d'ensemble](#vue-densemble)
+  - [Workflow Principal](#workflow-principal)
+  - [Architecture Détaillée des Composants](#architecture-détaillée-des-composants)
+  - [Processus de Génération XML TEIF](#processus-de-génération-xml-teif)
+  - [Structure XML et Séquence des Étapes](#structure-xml-et-séquence-des-étapes)
+  - [Processus de Génération de Signature](#processus-de-génération-de-signature)
+  - [Flux de Données et Validation](#flux-de-données-et-validation)
+  - [Légende des Diagrammes](#légende-des-diagrammes)
+- [Fonctionnalités Clés](#fonctionnalités-clés)
+  - [Signature Électronique XAdES-B](#signature-électronique-xades-b)
+  - [Conformité TEIF](#conformité-teif)
+  - [Architecture Modulaire](#architecture-modulaire)
+- [Implémentation Technique](#implémentation-technique)
+  - [Composants de la Section de Signature](#composants-de-la-section-de-signature)
+  - [Architecture du Flux de Données](#architecture-du-flux-de-données)
+- [Structure du Projet](#structure-du-projet)
+  - [Fichiers Racine Importants](#fichiers-racine-importants)
+  - [Fichiers de Configuration](#fichiers-de-configuration)
+- [Description des Composants Clés](#description-des-composants-clés)
+- [Installation](#installation)
+  - [Prérequis](#prérequis)
+  - [Installation des dépendances](#installation-des-dépendances)
+  - [Dépendances principales](#dépendances-principales)
+- [Utilisation](#utilisation)
+  - [Conversion d'un fichier PDF](#conversion-dun-fichier-pdf)
+  - [Spécifier un dossier de sortie](#spécifier-un-dossier-de-sortie)
+  - [Aperçu sans sauvegarde](#aperçu-sans-sauvegarde)
+  - [Tester avec des données d'exemple](#tester-avec-des-données-dexemple)
+  - [Aide](#aide)
+- [Signature XAdES](#signature-xades)
+  - [Génération de la signature](#génération-de-la-signature)
+  - [Ajout de la signature à la facture](#ajout-de-la-signature-à-la-facture)
+- [Contribution](#contribution)
+- [Licence](#licence)
+- [Auteur](#auteur)
+- [Remerciements](#remerciements)
+
+
 
 Convertisseur automatique de factures PDF vers le format TEIF (Tunisian Electronic Invoice Format) conforme aux standards TTN (Tunisie TradeNet) version 1.8.8.
 
@@ -115,27 +174,40 @@ Le format TEIF (Tunisian Electronic Invoice Format) suit une structure XML spéc
 
 Pour plus de détails, consultez le fichier `docs/TEIF_XML_Structure_Analysis.md`.
 
+
 ## Architecture du Projet
 
 ### Vue d'ensemble
 
-L'architecture du projet est conçue pour assurer une séparation claire des responsabilités et une facilité de maintenance. Voici les principaux composants :
+L'architecture du projet est conçue pour assurer une séparation claire des responsabilités et une facilité de maintenance. Le système intègre un flux de travail complet pour la conversion et la signature électronique de documents TEIF conformes aux standards Tunisie TradeNet.
 
-#### 1. Diagramme d'Architecture Principal
+### Workflow Principal
 
-![Architecture du Générateur TEIF](https://github.com/user-attachments/assets/64f109ab-fc9c-4c1c-bfd0-37f81d51b088 "Vue d'ensemble de l'architecture")
+![Workflow Principal](https://github.com/user-attachments/assets/64f109ab-fc9c-4c1c-bfd0-37f81d51b088)
 
-#### 2. Processus de Génération XML
+### Architecture Détaillée des Composants
 
-![Processus de génération XML](https://github.com/user-attachments/assets/0b07bdd3-41c5-4461-82f0-4c7594c2317f "Flux de génération XML")
+![Architecture Détaillée](https://github.com/user-attachments/assets/ba503358-b287-4743-8543-ec25e9bd1af8)
 
-#### 3. Séquence des Étapes
+### Processus de Génération XML TEIF
 
-![Séquence des étapes](https://github.com/user-attachments/assets/325185fa-4e5f-4d72-aa92-5deaf4522e9c "Séquence d'exécution")
+![Processus de Génération XML](https://github.com/user-attachments/assets/0b07bdd3-41c5-4461-82f0-4c7594c2317f)
 
-#### 4. Structure XML
+![Génération XML Détaillée](https://github.com/user-attachments/assets/a0f4b888-7210-43ae-92e3-55eea854d36c)
 
-![Structure XML](https://github.com/user-attachments/assets/2d1bbd60-fb42-4151-b87c-1277f4eed44b "Structure du document XML")
+### Structure XML et Séquence des Étapes
+
+![Structure XML](https://github.com/user-attachments/assets/2d1bbd60-fb42-4151-b87c-1277f4eed44b)
+
+![Séquence des Étapes](https://github.com/user-attachments/assets/325185fa-4e5f-4d72-aa92-5deaf4522e9c)
+
+### Processus de Génération de Signature
+
+![Génération de Signature](https://github.com/user-attachments/assets/ac16648b-6f0d-4c25-a445-eca2c663c9e5)
+
+### Flux de Données et Validation
+
+![Flux de Données](https://github.com/user-attachments/assets/bf20c4d1-288a-4e6b-b2ae-18d977ed0248)
 
 ### Légende des Diagrammes
 
@@ -143,6 +215,48 @@ L'architecture du projet est conçue pour assurer une séparation claire des res
 - **En bleu clair** : Fichiers d'entrée/sortie
 - **En vert clair** : Fichiers de configuration
 - **Boîtes blanches** : Composants principaux
+
+## Fonctionnalités Clés
+
+### Signature Électronique XAdES-B
+
+- **SignedInfo** : Contient la méthode de canonicalisation, la méthode de signature et les références du document
+- **SignatureValue** : Signature RSA-SHA256 de l'élément SignedInfo
+- **KeyInfo** : Informations du certificat X.509 pour la vérification de signature
+- **QualifyingProperties** : Propriétés spécifiques XAdES incluant l'heure de signature et les détails du certificat
+
+### Conformité TEIF
+
+- **TTN Version 1.8.8** : Conformité complète avec les spécifications Tunisie TradeNet
+- **Structure XML** : Structure de document TEIF correcte avec tous les éléments requis
+- **Validation** : Validation multi-niveaux pour l'intégrité des données et la conformité du format
+- **Sécurité** : Signatures XAdES-B pour l'authenticité et la non-répudiation des documents
+
+### Architecture Modulaire
+
+- **Extracteurs** : Extraction et normalisation des données PDF
+- **Générateurs** : Génération des sections XML TEIF
+- **Validateurs** : Validation des données et de la structure XML
+- **Interface CLI** : Outil en ligne de commande pour le traitement par lots
+
+## Implémentation Technique
+
+### Composants de la Section de Signature
+
+- **Gestion des namespaces** : Gestion appropriée des namespaces XML pour les préfixes ds: et xades:
+- **Gestion des certificats** : Chargement et validation des certificats X.509
+- **Calcul d'empreinte** : Calcul de hash SHA-256 pour l'intégrité du document
+- **Canonicalisation** : XML-EXC-C14N pour une représentation XML cohérente
+- **Transformations XPath** : Filtrage et traitement des références de document
+
+### Architecture du Flux de Données
+
+- **Couche d'entrée** : Fichiers PDF, configuration et certificats
+- **Couche de traitement** : Extraction, normalisation et validation
+- **Couche de génération** : Création de la structure XML TEIF
+- **Couche de sécurité** : Application de la signature XAdES-B
+- **Couche de sortie** : XML TEIF signé conforme aux standards TTN
+
 
 ## Structure du Projet
 
