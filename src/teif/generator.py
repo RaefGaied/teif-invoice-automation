@@ -121,7 +121,21 @@ class TEIFGenerator:
             
             # Use our XML serialization utility
             from .utils.xml_utils import serialize_xml
-            return serialize_xml(root)
+            teif_xml = serialize_xml(root)
+            
+            # Créer le dossier output s'il n'existe pas
+            os.makedirs('output', exist_ok=True)
+            
+            # Générer un nom de fichier avec horodatage
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            output_file = f'output/teif_invoice_{timestamp}.xml'
+            
+            # Sauvegarder dans le fichier
+            with open(output_file, 'w', encoding='utf-8') as f:
+                f.write(teif_xml)
+            
+            print(f"Fichier TEIF généré avec succès : {output_file}")
+            return teif_xml
             
         except Exception as e:
             self.logger.error(f"Error generating TEIF XML: {str(e)}")

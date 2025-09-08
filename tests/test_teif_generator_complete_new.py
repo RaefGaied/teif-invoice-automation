@@ -54,7 +54,7 @@ def generate_complete_teif_invoice():
         "buyer": {
             "identifier": "9876543BBM002",
             "name": "SOCIETE CLIENTE SARL",
-            "vat_number": "87654321",  # Added required field
+            "vat_number": "87654321",
             "address": {
                 "street": "AVENUE MOHAMED V",
                 "city": "SOUSSE",

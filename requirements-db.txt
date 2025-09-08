@@ -1,0 +1,21 @@
+# Dépendances principales
+sqlalchemy>=1.4.0,<2.0.0  # ORM pour Python
+pydantic>=1.9.0,<2.0.0  # Validation des données
+alembic>=1.7.0,<2.0.0   # Gestion des migrations
+python-dotenv>=0.19.0   # Gestion des variables d'environnement
+
+# Pour SQL Server
+pyodbc>=4.0.0          # Pilote ODBC pour SQL Server
+pyopenssl>=20.0.0      # Pour le chiffrement SSL
+
+# Pour le développement
+python-jose[cryptography]>=3.3.0  # Pour JWT (authentification)
+passlib[bcrypt]>=1.7.4            # Pour le hachage des mots de passe
+
+# Pour les tests
+pytest>=6.2.5
+pytest-cov>=2.12.0
+pytest-mock>=3.6.1
+
+# Pour le logging
+python-json-logger>=2.0.2
