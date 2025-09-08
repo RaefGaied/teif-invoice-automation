@@ -1,98 +1,160 @@
 """
 Gestionnaire avancé des opérations sur les entreprises TEIF
-Version 2.0 - Support complet TEIF 1.8.8 et structures complexes
+Version 2.1 - Améliorations de performance et de typage
 """
-from typing import List, Dict, Any, Optional, Tuple, Union
-from sqlalchemy.orm import Session, joinedload, selectinload
-from sqlalchemy import func, desc, asc, and_, or_, text, case
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from typing import List, Dict, Any, Optional, Tuple, Union, TypeVar, Type, cast
+from datetime import datetime, timedelta
 from decimal import Decimal
 import re
 import logging
-from datetime import datetime, timedelta
+from contextlib import contextmanager
 
-from .models import (
-    Company, Invoice, CompanyReference, CompanyContact, 
-    ContactCommunication, InvoiceSignature, AuditLog
-)
-from ..exceptions import TEIFValidationError, TEIFDatabaseError
-from ..config import CONFIG
+from sqlalchemy import func, desc, or_, and_, select
+from sqlalchemy.orm import Session, selectinload, joinedload
+from sqlalchemy.exc import SQLAlchemyError, IntegrityError
+
+from ..models.company import Company, CompanyContact, CompanyReference, CompanyCommunication
+from ..models.invoice import Invoice
+from ..models.audit import AuditLog
+from ...config import CONFIG
+from ...exceptions import TEIFValidationError, TEIFDatabaseError
+
+# Type aliases
+T = TypeVar('T')
+CompanyData = Dict[str, Any]
+CompanyList = List[Company]
+SearchResult = Tuple[CompanyList, int]
 
 logger = logging.getLogger(__name__)
 
 class CompanyManager:
-    """Gestionnaire avancé pour les opérations CRUD sur les entreprises"""
+    """
+    Gestionnaire avancé pour les opérations CRUD sur les entreprises
+    
+    Cette classe fournit une interface complète pour gérer les entreprises
+    dans le système TEIF, avec support pour la validation, le cache, et 
+    les opérations par lots.
+    
+    Attributes:
+        session: Session SQLAlchemy pour les opérations de base de données
+        config: Configuration de l'application
+        _cache: Dictionnaire pour le cache en mémoire
+        _cache_ttl: Dictionnaire pour les durées de vie du cache
+    """
     
     def __init__(self, session: Session):
+        """
+        Initialise le gestionnaire d'entreprises.
+        
+        Args:
+            session: Session SQLAlchemy à utiliser pour les opérations de base de données
+        """
         self.session = session
         self.config = CONFIG
-        self._cache = {}
-        self._cache_ttl = {}
-        
-    def _is_cache_valid(self, key: str) -> bool:
-        """Vérifie si l'entrée du cache est encore valide"""
-        if key not in self._cache_ttl:
-            return False
-        return datetime.now() < self._cache_ttl[key]
+        self._cache: Dict[str, Any] = {}
+        self._cache_ttl: Dict[str, datetime] = {}
     
-    def _set_cache(self, key: str, value: Any, ttl_minutes: int = 60):
-        """Met en cache une valeur avec TTL"""
+    # Cache methods with type hints
+    def _is_cache_valid(self, key: str) -> bool:
+        """
+        Vérifie si une entrée du cache est encore valide.
+        
+        Args:
+            key: Clé de l'entrée du cache
+            
+        Returns:
+            bool: True si le cache est valide, False sinon
+        """
+        if key not in self._cache or key not in self._cache_ttl:
+            return False
+        return datetime.utcnow() < self._cache_ttl[key]
+    
+    def _set_cache(self, key: str, value: Any, ttl_minutes: int = 60) -> None:
+        """
+        Stocke une valeur dans le cache avec une durée de vie.
+        
+        Args:
+            key: Clé de l'entrée du cache
+            value: Valeur à mettre en cache
+            ttl_minutes: Durée de vie en minutes (par défaut: 60)
+        """
         self._cache[key] = value
-        self._cache_ttl[key] = datetime.now() + timedelta(minutes=ttl_minutes)
+        self._cache_ttl[key] = datetime.utcnow() + timedelta(minutes=ttl_minutes)
     
     def _get_cache(self, key: str) -> Optional[Any]:
-        """Récupère une valeur du cache si valide"""
+        """
+        Récupère une valeur du cache si elle est valide.
+        
+        Args:
+            key: Clé de l'entrée du cache
+            
+        Returns:
+            La valeur mise en cache ou None si invalide ou absente
+        """
         if self._is_cache_valid(key):
             return self._cache[key]
         return None
     
-    def _validate_company_data(self, company_data: Dict[str, Any]) -> List[str]:
-        """Valide les données d'entreprise selon TEIF 1.8.8"""
+    def _validate_company_data(self, company_data: CompanyData) -> List[str]:
+        """
+        Valide les données d'entreprise selon les règles TEIF 1.8.8.
+        
+        Args:
+            company_data: Dictionnaire contenant les données de l'entreprise
+            
+        Returns:
+            Liste des messages d'erreur de validation, vide si valide
+            
+        Raises:
+            TEIFValidationError: Si les données sont invalides
+        """
         errors = []
         
-        # Champs obligatoires TEIF
-        required_fields = {
-            'name': 'Nom de l\'entreprise',
-            'identifier': 'Identifiant fiscal',
-            'vat_number': 'Numéro de TVA',
-            'address_street': 'Adresse',
-            'address_city': 'Ville',
-            'address_postal_code': 'Code postal',
-            'address_country_code': 'Code pays'
-        }
-        
-        for field, label in required_fields.items():
+        # Vérification des champs obligatoires
+        required_fields = ['name', 'vat_number', 'identifier', 'tax_id']
+        for field in required_fields:
             if not company_data.get(field):
-                errors.append(f"{label} est obligatoire")
+                errors.append(f"Le champ {field} est obligatoire")
         
-        # Validation du numéro de TVA tunisien
+        # Validation du numéro de TVA (format tunisien: 8 chiffres)
         vat_number = company_data.get('vat_number', '')
-        if vat_number and not re.match(r'^\d{8}$', vat_number):
-            errors.append("Le numéro de TVA doit contenir exactement 8 chiffres")
+        if vat_number and not re.match(r'^\d{8}$', str(vat_number)):
+            errors.append("Le numéro de TVA doit contenir 8 chiffres")
         
-        # Validation de l'identifiant fiscal
+        # Validation de l'identifiant fiscal (format: 7 chiffres + 3 lettres + 3 chiffres)
         identifier = company_data.get('identifier', '')
-        if identifier and not re.match(r'^\d{7}[A-Z]{3}\d{3}$', identifier):
-            errors.append("L'identifiant fiscal doit suivre le format: 7chiffres + 3lettres + 3chiffres")
-        
-        # Validation du code pays (ISO 3166-1 alpha-2)
-        country_code = company_data.get('address_country_code', '')
-        if country_code and len(country_code) != 2:
-            errors.append("Le code pays doit contenir exactement 2 caractères")
+        if identifier and not re.match(r'^\d{7}[A-Za-z]{3}\d{3}$', identifier):
+            errors.append("L'identifiant fiscal doit être au format 1234567XXX123")
         
         # Validation de l'email
         email = company_data.get('email', '')
-        if email and not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', email):
+        if email and not re.match(r'^[^@]+@[^@]+\.[^@]+$', email):
             errors.append("Format d'email invalide")
         
-        # Validation du téléphone
+        # Validation du téléphone (format international simplifié)
         phone = company_data.get('phone', '')
-        if phone and not re.match(r'^\+216\s?\d{2}\s?\d{3}\s?\d{3}$', phone):
-            errors.append("Le téléphone doit suivre le format tunisien: +216 XX XXX XXX")
+        if phone and not re.match(r'^\+?[\d\s-]{8,20}$', phone):
+            errors.append("Format de téléphone invalide")
+        
+        # Validation du code pays (2 lettres majuscules)
+        country_code = company_data.get('address_country_code', '')
+        if country_code and not re.match(r'^[A-Z]{2}$', country_code):
+            errors.append("Le code pays doit être sur 2 lettres majuscules")
         
         return errors
     
-    def create_company(self, company_data: Dict[str, Any]) -> Company:
+    @contextmanager
+    def _transaction_scope(self) -> None:
+        """Gère la portée d'une transaction avec rollback automatique en cas d'erreur."""
+        try:
+            yield
+            self.session.commit()
+        except Exception as e:
+            self.session.rollback()
+            logger.error(f"Transaction error: {e}")
+            raise
+    
+    def create_company(self, company_data: CompanyData) -> Company:
         """Crée une nouvelle entreprise avec validation complète"""
         try:
             # Validation des données
@@ -143,7 +205,7 @@ class CompanyManager:
                 
                 # Ajouter les moyens de communication
                 for comm_data in communications:
-                    communication = ContactCommunication(
+                    communication = CompanyCommunication(
                         contact_id=contact.id,
                         **comm_data
                     )
@@ -241,7 +303,7 @@ class CompanyManager:
                         active_only: bool = True,
                         limit: int = 50,
                         offset: int = 0,
-                        order_by: str = 'name') -> Tuple[List[Company], int]:
+                        order_by: str = 'name') -> SearchResult:
         """Recherche avancée des entreprises avec pagination"""
         
         query = self.session.query(Company)
@@ -285,7 +347,7 @@ class CompanyManager:
         
         return companies, total
     
-    def update_company(self, company_id: int, update_data: Dict[str, Any]) -> Company:
+    def update_company(self, company_id: int, update_data: CompanyData) -> Company:
         """Met à jour une entreprise avec audit"""
         try:
             company = self.get_company(company_id)
@@ -413,7 +475,7 @@ class CompanyManager:
                 func.sum(Invoice.total_with_tax).label('amount')
             ).filter(
                 Invoice.supplier_id == company_id,
-                Invoice.invoice_date >= datetime.now() - timedelta(days=365)
+                Invoice.invoice_date >= datetime.utcnow() - timedelta(days=365)
             ).group_by(
                 func.date_trunc('month', Invoice.invoice_date)
             ).order_by('month').all()
@@ -451,7 +513,7 @@ class CompanyManager:
     def get_top_suppliers(self, limit: int = 10, period_days: int = 365) -> List[Dict[str, Any]]:
         """Récupère le top des fournisseurs par chiffre d'affaires"""
         try:
-            cutoff_date = datetime.now() - timedelta(days=period_days)
+            cutoff_date = datetime.utcnow() - timedelta(days=period_days)
             
             results = self.session.query(
                 Company,
@@ -486,7 +548,7 @@ class CompanyManager:
     def get_top_customers(self, limit: int = 10, period_days: int = 365) -> List[Dict[str, Any]]:
         """Récupère le top des clients par montant d'achats"""
         try:
-            cutoff_date = datetime.now() - timedelta(days=period_days)
+            cutoff_date = datetime.utcnow() - timedelta(days=period_days)
             
             results = self.session.query(
                 Company,
@@ -518,7 +580,7 @@ class CompanyManager:
             logger.error(f"Erreur lors de la récupération du top clients: {e}")
             raise TEIFDatabaseError(f"Erreur lors de la récupération du top clients: {e}")
     
-    def bulk_import_companies(self, companies_data: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def bulk_import_companies(self, companies_data: List[CompanyData]) -> Dict[str, Any]:
         """Import en masse d'entreprises avec rapport détaillé"""
         results = {
             'success': [],
@@ -563,25 +625,108 @@ class CompanyManager:
             logger.error(f"Erreur lors de l'import en masse: {e}")
             raise TEIFDatabaseError(f"Erreur lors de l'import en masse: {e}")
     
-    def export_companies_teif_format(self, company_ids: List[int] = None) -> List[Dict[str, Any]]:
-        """Exporte les entreprises au format TEIF 1.8.8"""
+    def export_companies_teif_format(
+        self,
+        company_ids: Optional[List[int]] = None,
+        include_inactive: bool = False,
+        batch_size: int = 1000,
+        fields: Optional[List[str]] = None,
+        modified_since: Optional[datetime] = None,
+        **filters
+    ) -> Dict[str, Any]:
+        """
+        Exporte les entreprises au format TEIF 1.8.8 avec des options avancées.
+        
+        Args:
+            company_ids: Liste des IDs d'entreprises à exporter (toutes si None)
+            include_inactive: Inclure les entreprises inactives (désactivées)
+            batch_size: Nombre d'entreprises à traiter par lot (optimisation mémoire)
+            fields: Liste des champs à inclure dans l'export (tous si None)
+            modified_since: Filtrer les entreprises modifiées depuis cette date
+            **filters: Filtres supplémentaires (ex: name_contains='SARL')
+            
+        Returns:
+            Dictionnaire contenant les données d'export et des métadonnées
+            
+        Example:
+            >>> # Exporter les entreprises actives modifiées ce mois-ci
+            >>> last_month = datetime.utcnow() - timedelta(days=30)
+            >>> result = manager.export_companies_teif_format(
+            ...     include_inactive=False,
+            ...     modified_since=last_month,
+            ...     name_contains='SARL'
+            ... )
+            >>> print(f"Exporté {len(result['data'])} entreprises")
+        """
         try:
+            # Construction de la requête de base
             query = self.session.query(Company).options(
                 selectinload(Company.references),
                 selectinload(Company.contacts).selectinload(CompanyContact.communications)
             )
             
-            if company_ids:
+            # Filtrage par IDs
+            if company_ids is not None:
                 query = query.filter(Company.id.in_(company_ids))
-            else:
+            
+            # Filtre d'état actif/inactif
+            if not include_inactive:
                 query = query.filter(Company.is_active == True)
             
-            companies = query.all()
+            # Filtre de date de modification
+            if modified_since is not None:
+                query = query.filter(Company.updated_at >= modified_since)
             
-            return [company.to_teif_dict() for company in companies]
+            # Filtres dynamiques (ex: name_contains='SARL' -> WHERE name LIKE '%SARL%')
+            for key, value in filters.items():
+                if key.endswith('_contains') and value:
+                    field = key[:-9]  # Enlève '_contains' de la clé
+                    if hasattr(Company, field):
+                        query = query.filter(
+                            getattr(Company, field).ilike(f'%{value}%')
+                        )
+                elif hasattr(Company, key):
+                    query = query.filter(getattr(Company, key) == value)
+            
+            # Compte total pour la pagination
+            total_companies = query.count()
+            
+            # Fonction pour générer les lots
+            def generate_batches():
+                offset = 0
+                while offset < total_companies:
+                    batch = query.offset(offset).limit(batch_size).all()
+                    if not batch:
+                        break
+                    for company in batch:
+                        yield company.to_teif_dict(fields=fields)
+                    offset += batch_size
+            
+            # Préparation du résultat
+            result = {
+                'metadata': {
+                    'format': 'TEIF-1.8.8',
+                    'export_date': datetime.utcnow().isoformat(),
+                    'company_count': total_companies,
+                    'included_fields': fields or 'all',
+                    'filters': {
+                        'include_inactive': include_inactive,
+                        'modified_since': modified_since.isoformat() if modified_since else None,
+                        **filters
+                    }
+                },
+                'data': list(generate_batches())  # Conversion en liste pour évaluation immédiate
+            }
+            
+            logger.info(
+                f"Export TEIF réussi: {total_companies} entreprises "
+                f"(champs: {len(fields) if fields else 'tous'})"
+            )
+            
+            return result
             
         except Exception as e:
-            logger.error(f"Erreur lors de l'export TEIF: {e}")
+            logger.error(f"Erreur lors de l'export TEIF: {e}", exc_info=True)
             raise TEIFDatabaseError(f"Erreur lors de l'export TEIF: {e}")
 
 def create_sample_companies(session: Session) -> List[Company]:

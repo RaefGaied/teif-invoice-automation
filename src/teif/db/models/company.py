@@ -1,7 +1,7 @@
 """Company models for TEIF system with contacts and references."""
 
 from typing import List, Optional
-from sqlalchemy import String, ForeignKey, Text, CheckConstraint
+from sqlalchemy import String, ForeignKey, Text, CheckConstraint, Index, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 from .base import BaseModel
 
@@ -37,6 +37,26 @@ class Company(BaseModel):
     customer_invoices: Mapped[List["Invoice"]] = relationship(foreign_keys="Invoice.customer_id", back_populates="customer")
     
     __table_args__ = (
+        # Single column indexes
+        Index('idx_company_vat', 'vat_number'),
+        Index('idx_company_identifier', 'identifier'),
+        Index('idx_company_tax_id', 'tax_id'),
+        Index('idx_company_commercial_register', 'commercial_register'),
+        
+        # Composite index for common search patterns
+        Index('idx_company_name_city', 'name', 'address_city'),
+        
+        # Partial index for active companies
+        Index('idx_company_active', 'is_active', postgresql_where=('is_active IS TRUE')),
+        
+        # Unique constraints
+        UniqueConstraint('vat_number', name='uq_company_vat'),
+        UniqueConstraint('identifier', name='uq_company_identifier'),
+        
+        # Table-level comment
+        {'comment': 'Stores company information for TEIF system'},
+        
+        # Email validation constraint
         CheckConstraint("email IS NULL OR email LIKE '%@%.%'", name='valid_email_check'),
     )
     

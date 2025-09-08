@@ -1,16 +1,3 @@
--- Schema SQL Server corrigé - Création de la base de données TEIF complète
--- Ordre de création optimisé pour éviter les erreurs de dépendances
-
-USE master;
-GO
-
--- Créer la base de données si elle n'existe pas
-IF NOT EXISTS (SELECT name FROM sys.databases WHERE name = 'TEIF_Complete_DB')
-BEGIN
-    CREATE DATABASE TEIF_Complete_DB;
-END
-GO
-
 USE TEIF_Complete_DB;
 GO
 
