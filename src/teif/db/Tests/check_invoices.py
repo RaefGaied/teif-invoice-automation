@@ -12,7 +12,7 @@ def check_invoices():
             invoices = conn.execute(text("""
                 SELECT 
                     i.id, 
-                    i.document_number as invoice_number, 
+                    i.document_number, 
                     i.invoice_date as issue_date,
                     s.name as supplier, 
                     c.name as customer,
@@ -27,7 +27,7 @@ def check_invoices():
             
             for inv in invoices:
                 print("\n" + "="*60)
-                print(f"📋 Facture: {inv.invoice_number}")
+                print(f"📋 Facture: {inv.document_number}")
                 print(f"   Date: {inv.issue_date}")
                 print(f"   Fournisseur: {inv.supplier}")
                 print(f"   Client: {inv.customer}")
@@ -37,24 +37,19 @@ def check_invoices():
                 lines = conn.execute(text("""
                     SELECT 
                         line_number, 
-                        item_name, 
+                        description, 
                         quantity, 
                         unit_price, 
-                        tax_rate, 
-                        tax_amount, 
-                        line_total
+                        line_total_ht
                     FROM invoice_lines
                     WHERE invoice_id = :invoice_id
                     ORDER BY line_number
                 """), {'invoice_id': inv.id})
                 
                 for line in lines:
-                    print(f"\n   Ligne {line.line_number}: {line.quantity}x {line.item_name}")
+                    print(f"\n   Ligne {line.line_number}: {line.quantity}x {line.description}")
                     print(f"     Prix unitaire: {line.unit_price} TND")
-                    print(f"     Total HT: {line.unit_price * line.quantity} TND")
-                    print(f"     Taux TVA: {line.tax_rate}%")
-                    print(f"     Montant TVA: {line.tax_amount} TND")
-                    print(f"     Total TTC: {line.line_total} TND")
+                    print(f"     Total HT: {line.line_total_ht} TND")
                 
                 # Totaux
                 print("\n   Récapitulatif :")
