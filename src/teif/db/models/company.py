@@ -3,6 +3,8 @@
 from typing import List, Optional
 from sqlalchemy import String, ForeignKey, Text, CheckConstraint, Index, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
+
+from teif.db.models.invoice import Invoice
 from .base import BaseModel
 
 class Company(BaseModel):
@@ -30,12 +32,21 @@ class Company(BaseModel):
     fax: Mapped[Optional[str]] = mapped_column(String(50))
     website: Mapped[Optional[str]] = mapped_column(String(255))
     
+    # Status
+    is_active: Mapped[bool] = mapped_column(
+        default=True,
+        nullable=False,
+        server_default='1',
+        comment='Indicates if the company is active'
+    )
+    
     # Relationships
     references: Mapped[List["CompanyReference"]] = relationship(back_populates="company", cascade="all, delete-orphan")
     contacts: Mapped[List["CompanyContact"]] = relationship(back_populates="company", cascade="all, delete-orphan")
     supplier_invoices: Mapped[List["Invoice"]] = relationship(foreign_keys="Invoice.supplier_id", back_populates="supplier")
     customer_invoices: Mapped[List["Invoice"]] = relationship(foreign_keys="Invoice.customer_id", back_populates="customer")
     
+    # Table metadata
     __table_args__ = (
         # Single column indexes
         Index('idx_company_vat', 'vat_number'),
@@ -46,15 +57,12 @@ class Company(BaseModel):
         # Composite index for common search patterns
         Index('idx_company_name_city', 'name', 'address_city'),
         
-        # Partial index for active companies
-        Index('idx_company_active', 'is_active', postgresql_where=('is_active IS TRUE')),
+        # Simple index on is_active instead of partial index
+        Index('idx_company_active', 'is_active'),
         
         # Unique constraints
         UniqueConstraint('vat_number', name='uq_company_vat'),
         UniqueConstraint('identifier', name='uq_company_identifier'),
-        
-        # Table-level comment
-        {'comment': 'Stores company information for TEIF system'},
         
         # Email validation constraint
         CheckConstraint("email IS NULL OR email LIKE '%@%.%'", name='valid_email_check'),

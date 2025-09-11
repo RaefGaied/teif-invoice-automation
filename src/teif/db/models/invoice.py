@@ -492,6 +492,6 @@ class SpecialCondition(BaseModel):
 
 
 # Import these here to avoid circular imports
-from .invoice_tax import InvoiceTax, LineTax
-from .payment import PaymentTerm, PaymentMean, InvoiceMonetaryAmount
+from .tax import InvoiceTax, LineTax, InvoiceMonetaryAmount
+from .payment import PaymentTerm, PaymentMean
 from .signature import InvoiceSignature, GeneratedXmlFile

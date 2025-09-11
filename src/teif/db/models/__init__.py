@@ -12,7 +12,7 @@ Model Categories:
 - Signature: Digital signatures and XML generation
 """
 
-from .base import BaseModel, TimestampMixin
+from .base import Base, BaseModel, TimestampMixin
 from .company import Company, CompanyReference, CompanyContact, ContactCommunication
 from .invoice import Invoice, InvoiceDate, InvoiceLine, InvoiceReference, AdditionalDocument, SpecialCondition
 from .tax import LineTax, InvoiceTax, InvoiceMonetaryAmount
@@ -20,8 +20,8 @@ from .payment import PaymentTerm, PaymentMean
 from .signature import InvoiceSignature, GeneratedXmlFile
 
 __all__ = [
-    # Base
-    'BaseModel', 'TimestampMixin',
+    # Base classes
+    'Base', 'BaseModel', 'TimestampMixin',
     
     # Company models
     'Company', 'CompanyReference', 'CompanyContact', 'ContactCommunication',
@@ -37,5 +37,5 @@ __all__ = [
     'PaymentTerm', 'PaymentMean',
     
     # Signature models
-    'InvoiceSignature', 'GeneratedXmlFile'
+    'InvoiceSignature', 'GeneratedXmlFile',
 ]
