@@ -83,13 +83,17 @@ class BaseService(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         self, 
         *, 
         skip: int = 0, 
-        limit: int = 100
+        limit: int = 100,
+        status: Optional[str] = None,
+        company_id: Optional[int] = None
     ) -> List[ModelType]:
         """Get multiple records with pagination.
         
         Args:
             skip: Number of records to skip
             limit: Maximum number of records to return
+            status: Optional status filter
+            company_id: Optional company ID filter
             
         Returns:
             List of records
@@ -99,7 +103,7 @@ class BaseService(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         """
         self.logger.debug(f"Getting {limit} records, skipping {skip}")
         try:
-            return self.repository.get_multi(skip=skip, limit=limit)
+            return self.repository.get_multi(skip=skip, limit=limit, status=status, company_id=company_id)
         except Exception as e:
             self.logger.error(f"Error getting records: {str(e)}")
             raise

@@ -1,0 +1,24 @@
+{
+  "actions": {
+    "close": "Close",
+    "copyToClipboard": "Copy to clipboard",
+    "copied": "Copied!",
+    "download": "Download",
+    "refresh": "Refresh"
+  },
+  "loading": "Loading...",
+  "errors": {
+    "title": "Error",
+    "unknown": "An unknown error occurred"
+  },
+  "dateTimeFormats": {
+    "longDateTime": "MM/dd/yyyy, h:mm:ss a"
+  },
+  "status": {
+    "pending": "Pending",
+    "generating": "Generating...",
+    "generated": "Generated",
+    "signed": "Signed",
+    "error": "Error"
+  }
+}

@@ -1,11 +1,27 @@
-from typing import List, Optional
-from datetime import date
-from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
-from sqlalchemy.orm import Session
+from typing import List, Optional, Union
+from datetime import date, datetime
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form, Response
+from sqlalchemy.orm import Session, joinedload, selectinload
+from sqlalchemy import func, or_
+from datetime import timedelta
 
-from ....db.session import get_db
-from ....db.services import InvoiceService, CompanyService
-from ....schemas.invoice import (
+from src.teif.db.session import get_db
+from src.teif.db.services.invoice_service import InvoiceService
+from src.teif.db.services.company_service import CompanyService
+from src.teif.db.models.invoice import (
+    Invoice as InvoiceModel,
+    InvoiceLine,
+    InvoiceStatus,
+    InvoiceDate,
+    InvoiceReference,
+    AdditionalDocument,
+    SpecialCondition,
+    InvoiceLine
+)
+from src.teif.db.models.tax import LineTax, InvoiceTax, InvoiceMonetaryAmount
+from src.teif.db.models.payment import PaymentTerm, PaymentMean
+from src.teif.db.models.signature import InvoiceSignature, GeneratedXmlFile
+from src.teif.db.schemas.invoice import (
     InvoiceCreate,
     InvoiceUpdate,
     Invoice as InvoiceSchema,
@@ -13,8 +29,12 @@ from ....schemas.invoice import (
     InvoiceLine as InvoiceLineSchema,
     InvoiceStatus
 )
+from src.teif.generator import TEIFGenerator
+import logging
 
-router = APIRouter(prefix="/invoices", tags=["invoices"])
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
 
 @router.get("/", response_model=List[InvoiceSchema])
 async def list_invoices(
@@ -43,16 +63,7 @@ async def list_invoices(
         )
     
     # Otherwise, use the basic query
-    query = db.query(service.repository.model)
-    if status:
-        query = query.filter(service.repository.model.status == status)
-    if company_id:
-        query = query.filter(
-            (service.repository.model.supplier_id == company_id) |
-            (service.repository.model.customer_id == company_id)
-        )
-    
-    return query.offset(skip).limit(limit).all()
+    return service.get_multi(skip=skip, limit=limit, status=status, company_id=company_id)
 
 @router.post("/", response_model=InvoiceSchema, status_code=status.HTTP_201_CREATED)
 async def create_invoice(
@@ -208,21 +219,278 @@ async def get_invoice_statistics(
 @router.post("/upload/", response_model=InvoiceSchema, status_code=status.HTTP_201_CREATED)
 async def upload_invoice_pdf(
     file: UploadFile = File(...),
+    document_number: str = Form(...),
+    invoice_date: date = Form(...),
+    due_date: date = Form(...),
+    supplier_id: int = Form(...),
+    customer_id: int = Form(...),
+    status: InvoiceStatus = Form(InvoiceStatus.PROCESSING),
+    currency: str = Form("TND"),
+    notes: Optional[str] = Form(None),
+    terms: Optional[str] = Form(None),
     db: Session = Depends(get_db)
 ):
     """
     Upload a PDF invoice for processing.
-    """
-    # In a real implementation, you would:
-    # 1. Save the uploaded file
-    # 2. Extract data from the PDF
-    # 3. Create an invoice from the extracted data
-    # 4. Return the created invoice
     
-    # For now, we'll just return a placeholder response
-    return {
-        "id": 1,
-        "document_number": "INV-2023-001",
-        "status": "draft",
-        "message": "Invoice processing is not yet implemented"
+    Required form fields:
+    - document_number: Invoice number (e.g., 'INV-2023-001')
+    - invoice_date: Invoice date (YYYY-MM-DD)
+    - due_date: Payment due date (YYYY-MM-DD)
+    - supplier_id: ID of the supplier company
+    - customer_id: ID of the customer company
+    
+    Optional form fields:
+    - status: Invoice status (default: 'processing')
+    - currency: Currency code (default: 'TND')
+    - notes: Additional notes
+    - terms: Payment terms
+    - file: The PDF file to upload
+    """
+    try:
+        # Create the invoice data dictionary
+        invoice_data = {
+            "document_number": document_number,
+            "invoice_date": invoice_date,
+            "due_date": due_date,
+            "supplier_id": supplier_id,
+            "customer_id": customer_id,
+            "status": status,
+            "currency": currency,
+            "notes": notes,
+            "terms": terms,
+            "lines": []  # We'll process lines from the PDF later
+        }
+        
+        # Save the uploaded file to a temporary location
+        # In a real implementation, you would save this to a proper storage
+        file_location = f"temp/{file.filename}"
+        with open(file_location, "wb+") as file_object:
+            file_object.write(await file.read())
+        
+        # TODO: Process the PDF and extract invoice lines
+        # For now, we'll create an invoice with no lines
+        
+        # Create the invoice in the database
+        invoice_service = InvoiceService(db)
+        created_invoice = invoice_service.create_invoice(
+            invoice_data=InvoiceCreate(**invoice_data),
+            created_by="api_upload"
+        )
+        
+        # In a real implementation, you would:
+        # 1. Process the PDF to extract line items
+        # 2. Add the extracted lines to the invoice
+        # 3. Update the invoice totals
+        
+        return created_invoice
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error processing invoice: {str(e)}"
+        )
+
+@router.get("/export/", response_model=List[InvoiceSchema])
+async def export_invoices(
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    invoice_status: Optional[InvoiceStatus] = None,
+    company_id: Optional[int] = None,
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db)
+):
+    """
+    Export invoices from the database with optional filtering.
+    
+    Parameters:
+    - start_date: Filter invoices after this date (inclusive)
+    - end_date: Filter invoices before this date (inclusive)
+    - invoice_status: Filter by invoice status (processing, processed, error)
+    - company_id: Filter by supplier or customer company ID
+    - skip: Number of records to skip for pagination
+    - limit: Maximum number of records to return
+    """
+    try:
+        from sqlalchemy.orm import selectinload
+        from src.teif.db.models.invoice import InvoiceLine, InvoiceDate, InvoiceReference
+        from src.teif.db.models.company import Company
+        from src.teif.db.models.tax import LineTax
+        
+        # Build the base query
+        query = db.query(InvoiceModel)
+        
+        # Apply filters
+        if start_date:
+            query = query.filter(InvoiceModel.invoice_date >= start_date)
+        if end_date:
+            next_day = datetime.combine(end_date, datetime.min.time()) + timedelta(days=1)
+            query = query.filter(InvoiceModel.invoice_date < next_day)
+        if invoice_status:
+            query = query.filter(InvoiceModel.status == invoice_status)
+        if company_id:
+            query = query.filter(
+                or_(
+                    InvoiceModel.supplier_id == company_id,
+                    InvoiceModel.customer_id == company_id
+                )
+            )
+        
+        # Get total count before pagination
+        total = query.count()
+        
+        # Apply ordering and pagination
+        query = query.order_by(InvoiceModel.invoice_date.desc())
+        
+        # Use selectinload for better performance with nested relationships
+        query = query.options(
+            selectinload(InvoiceModel.supplier),
+            selectinload(InvoiceModel.customer),
+            selectinload(InvoiceModel.dates),
+            selectinload(InvoiceModel.references),
+            selectinload(InvoiceModel.lines).selectinload(InvoiceLine.taxes),
+        )
+        
+        # Apply pagination
+        invoices = query.offset(skip).limit(limit).all()
+        
+        # Add pagination headers
+        response_headers = {
+            "X-Total-Count": str(total),
+            "X-Page-Size": str(limit),
+            "X-Page-Start": str(skip)
+        }
+        
+        return invoices
+        
+    except Exception as e:
+        from fastapi import status as http_status
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error exporting invoices: {str(e)}"
+        )
+
+@router.get("/{invoice_id}/xml", response_class=Response, responses={
+    200: {
+        "content": {"application/xml": {}},
+        "description": "Retourne le XML de la facture au format TEIF",
     }
+})
+async def generate_invoice_xml(
+    invoice_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Génère le XML d'une facture selon le standard TEIF.
+    
+    Args:
+        invoice_id: L'ID de la facture à exporter
+        
+    Returns:
+        Response: Le contenu XML de la facture avec l'en-tête Content-Type approprié
+    """
+    # Récupérer la facture avec toutes les relations nécessaires
+    invoice = db.query(InvoiceModel).\
+        options(
+            joinedload(InvoiceModel.supplier),
+            joinedload(InvoiceModel.customer),
+            joinedload(InvoiceModel.lines).joinedload("taxes"),
+            joinedload(InvoiceModel.taxes),
+            joinedload(InvoiceModel.dates),
+            joinedload(InvoiceModel.references),
+            joinedload(InvoiceModel.additional_documents),
+            joinedload(InvoiceModel.special_conditions)
+        ).\
+        filter(InvoiceModel.id == invoice_id).\
+        first()
+    
+    if not invoice:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Facture avec l'ID {invoice_id} non trouvée"
+        )
+    
+    try:
+        # Convertir la facture en dictionnaire pour le générateur
+        invoice_dict = {
+            "header": {
+                "invoice_number": invoice.document_number,
+                "invoice_date": invoice.invoice_date.isoformat(),
+                "due_date": invoice.due_date.isoformat() if invoice.due_date else None,
+                "currency": invoice.currency or "TND",
+                "notes": invoice.notes,
+                "status": invoice.status.value if invoice.status else "draft"
+            },
+            "seller": {
+                "name": invoice.supplier.name if invoice.supplier else "",
+                "tax_identifier": invoice.supplier.vat_number if invoice.supplier else "",
+                "address": {
+                    "street": invoice.supplier.address_street if invoice.supplier else "",
+                    "city": invoice.supplier.address_city if invoice.supplier else "",
+                    "postal_code": invoice.supplier.address_postal_code if invoice.supplier else "",
+                    "country": invoice.supplier.address_country_code if invoice.supplier else "TN"
+                },
+                "contact": {
+                    "name": next((c.contact_name for c in (invoice.supplier.contacts if invoice.supplier else []) if c.function_code == "SU"), ""),
+                    "email": next((c.communications[0].communication_value for c in (invoice.supplier.contacts if invoice.supplier else []) 
+                                 if c.function_code == "SU" and c.communications and c.communications[0].communication_type == "EM"), "")
+                }
+            },
+            "buyer": {
+                "name": invoice.customer.name if invoice.customer else "",
+                "tax_identifier": invoice.customer.vat_number if invoice.customer else "",
+                "address": {
+                    "street": invoice.customer.address_street if invoice.customer else "",
+                    "city": invoice.customer.address_city if invoice.customer else "",
+                    "postal_code": invoice.customer.address_postal_code if invoice.customer else "",
+                    "country": invoice.customer.address_country_code if invoice.customer else "TN"
+                },
+                "contact": {
+                    "name": next((c.contact_name for c in (invoice.customer.contacts if invoice.customer else []) if c.function_code == "BY"), ""),
+                    "email": next((c.communications[0].communication_value for c in (invoice.customer.contacts if invoice.customer else []) 
+                                 if c.function_code == "BY" and c.communications and c.communications[0].communication_type == "EM"), "")
+                }
+            },
+            "lines": [
+                {
+                    "item_code": line.item_code or "",
+                    "description": line.description,
+                    "quantity": float(line.quantity) if line.quantity else 1.0,
+                    "unit_price": float(line.unit_price) if line.unit_price else 0.0,
+                    "tax_rate": float(line.taxes[0].rate) if line.taxes and line.taxes[0] else 0.0,
+                    "discount": float(line.discount_amount) if line.discount_amount else 0.0,
+                    "currency": line.currency or "TND"
+                }
+                for line in invoice.lines
+            ],
+            "summary": {
+                "total_without_tax": float(invoice.total_without_tax) if invoice.total_without_tax else 0.0,
+                "total_tax": float(invoice.tax_amount) if invoice.tax_amount else 0.0,
+                "total_with_tax": float(invoice.total_with_tax) if invoice.total_with_tax else 0.0,
+                "currency": invoice.currency or "TND"
+            },
+            "payment_terms": invoice.payment_terms[0].description if invoice.payment_terms else "",
+            "additional_notes": "\n".join([f"{cond.sequence_number}. {cond.condition_text}" 
+                                     for cond in invoice.special_conditions]) if invoice.special_conditions else ""
+        }
+        
+        # Générer le XML
+        generator = TEIFGenerator()
+        xml_content = generator.generate_teif_xml(invoice_dict)
+        
+        # Retourner la réponse XML
+        return Response(
+            content=xml_content,
+            media_type="application/xml",
+            headers={
+                "Content-Disposition": f"attachment; filename=facture_{invoice.document_number}.xml"
+            }
+        )
+    except Exception as e:
+        # Journaliser l'erreur pour le débogage
+        logger.error(f"Erreur lors de la génération du XML pour la facture {invoice_id}: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erreur lors de la génération du XML: {str(e)}"
+        )

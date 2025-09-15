@@ -1,0 +1,35 @@
+{
+    "preview": {
+        "title": "TEIF Preview",
+        "subtitle": "Preview of the generated TEIF XML",
+        "generatedOn": "Generated on {date}",
+        "loading": "Loading TEIF content...",
+        "errors": {
+            "fetchFailed": "Failed to load TEIF content",
+            "fetchFailedMessage": "Could not load the TEIF content. Please try again later.",
+            "formatError": "Error formatting TEIF content"
+        }
+    },
+    "actions": {
+        "uploadPdf": "Upload PDF",
+        "generateTeif": "Generate TEIF",
+        "preview": "Preview",
+        "downloadXml": "Download XML"
+    },
+    "status": {
+        "lastUpdated": "Last updated",
+        "neverGenerated": "Not yet generated"
+    },
+    "messages": {
+        "generation": {
+            "success": "TEIF generated successfully",
+            "error": "Failed to generate TEIF"
+        },
+        "download": {
+            "error": "Failed to download TEIF"
+        },
+        "preview": {
+            "error": "Failed to load preview"
+        }
+    }
+}

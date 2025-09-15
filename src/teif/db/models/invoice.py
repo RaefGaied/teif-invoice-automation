@@ -2,6 +2,7 @@
 
 from datetime import date, datetime
 from decimal import Decimal
+from enum import Enum
 from typing import List, Optional, TYPE_CHECKING
 
 from sqlalchemy import (
@@ -10,11 +11,20 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
-from .base import BaseModel
+from .base import BaseModel, CreatedAtModel
 
 if TYPE_CHECKING:
     from .company import Company
+    from .tax import LineTax, InvoiceTax, InvoiceMonetaryAmount
+    from .payment import PaymentTerm, PaymentMean
+    from .signature import InvoiceSignature, GeneratedXmlFile
 
+class InvoiceStatus(str, Enum):
+    """Invoice status enumeration."""
+    PROCESSING = "processing"  # Default status when an invoice is first uploaded
+    PROCESSED = "processed"    # When the invoice has been successfully processed and XML generated
+    ERROR = "error"           # When there's an error during processing
+    
 class Invoice(BaseModel):
     """Main invoice entity according to TEIF 1.8.8 standard."""
     __tablename__ = 'invoices'
@@ -146,9 +156,9 @@ class Invoice(BaseModel):
     # Status and tracking
     status: Mapped[str] = mapped_column(
         String(50), 
-        default='draft', 
+        default='processing', 
         index=True,
-        comment="Invoice status (draft, sent, paid, etc.)"
+        comment="Invoice status (processing, processed, error)"
     )
     pdf_path: Mapped[Optional[str]] = mapped_column(
         String(500),
@@ -240,7 +250,7 @@ class Invoice(BaseModel):
         return f"<Invoice(number='{self.document_number}', date='{self.invoice_date}')>"
 
 
-class InvoiceDate(BaseModel):
+class InvoiceDate(CreatedAtModel):
     """Date information for invoices (DTM section)."""
     __tablename__ = 'invoice_dates'
     
@@ -385,7 +395,7 @@ class InvoiceLine(BaseModel):
         return f"<InvoiceLine(number={self.line_number}, desc='{self.description[:50]}...')>"
 
 
-class InvoiceReference(BaseModel):
+class InvoiceReference(CreatedAtModel):
     """Additional references for invoices."""
     __tablename__ = 'invoice_references'
     
@@ -416,7 +426,7 @@ class InvoiceReference(BaseModel):
         return f"<InvoiceReference(type='{self.reference_type}', value='{self.reference_value}')>"
 
 
-class AdditionalDocument(BaseModel):
+class AdditionalDocument(CreatedAtModel):
     """Additional documents related to an invoice."""
     __tablename__ = 'additional_documents'
     
@@ -458,7 +468,7 @@ class AdditionalDocument(BaseModel):
         return f"<AdditionalDocument(id='{self.document_id}', name='{self.document_name}')>"
 
 
-class SpecialCondition(BaseModel):
+class SpecialCondition(CreatedAtModel):
     """Special conditions or notes for an invoice."""
     __tablename__ = 'special_conditions'
     
@@ -487,8 +497,7 @@ class SpecialCondition(BaseModel):
     invoice: Mapped["Invoice"] = relationship("Invoice", back_populates="special_conditions")
     
     def __repr__(self) -> str:
-        text_preview = (self.condition_text[:47] + '...') if len(self.condition_text) > 50 else self.condition_text
-        return f"<SpecialCondition(seq={self.sequence_number}, text='{text_preview}')>"
+        return f"<SpecialCondition(seq={self.sequence_number}, lang='{self.language_code}')>"
 
 
 # Import these here to avoid circular imports

@@ -16,6 +16,7 @@ import {
     Select,
     VStack,
     Spinner,
+    Button,
 } from '@chakra-ui/react';
 import { FiDollarSign, FiFileText, FiTrendingUp, FiAlertCircle } from 'react-icons/fi';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';

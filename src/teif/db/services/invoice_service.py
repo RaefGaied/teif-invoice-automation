@@ -177,12 +177,12 @@ class InvoiceService(BaseService[Invoice, InvoiceCreate, InvoiceUpdate]):
         # Calculate statistics
         for invoice in invoices:
             stats['total_invoices'] += 1
-            stats['total_amount_ht'] += invoice.total_amount_ht or 0
-            stats['total_amount_tva'] += invoice.total_amount_tva or 0
-            stats['total_amount_ttc'] += invoice.total_amount_ttc or 0
+            stats['total_amount_ht'] += invoice.total_without_tax or 0
+            stats['total_amount_tva'] += invoice.tax_amount or 0
+            stats['total_amount_ttc'] += invoice.total_with_tax or 0
             
             # Group by status
-            status = invoice.status.value if invoice.status else 'UNKNOWN'
+            status = invoice.status.value if hasattr(invoice.status, 'value') else str(invoice.status)
             if status not in stats['by_status']:
                 stats['by_status'][status] = 0
             stats['by_status'][status] += 1
@@ -198,7 +198,7 @@ class InvoiceService(BaseService[Invoice, InvoiceCreate, InvoiceUpdate]):
                     'amount': 0
                 }
             stats['by_company'][company_id]['count'] += 1
-            stats['by_company'][company_id]['amount'] += invoice.total_amount_ttc or 0
+            stats['by_company'][company_id]['amount'] += invoice.total_with_tax or 0
             
             # Group by month
             month_key = invoice.invoice_date.strftime('%Y-%m')

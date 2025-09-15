@@ -1,18 +1,20 @@
+from datetime import datetime
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
-from ....db.session import get_db
-from ....db.services import CompanyService
-from ....schemas.company import (
+from src.teif.db.session import get_db
+from src.teif.db.services.company_service import CompanyService
+from src.teif.db.schemas.company import (
     CompanyCreate,
     CompanyUpdate,
     Company as CompanySchema,
     CompanyContactCreate,
-    CompanyContact as CompanyContactSchema
+    CompanyContact as CompanyContactSchema,
+    CompanyFinancialOverview
 )
 
-router = APIRouter(prefix="/companies", tags=["companies"])
+router = APIRouter(prefix="", tags=["companies"])
 
 @router.get("/", response_model=List[CompanySchema])
 async def list_companies(
@@ -111,7 +113,7 @@ async def add_company_contact(
         )
     return service.add_contact(company_id, contact)
 
-@router.get("/{company_id}/financial-overview")
+@router.get("/{company_id}/financial-overview", response_model=CompanyFinancialOverview)
 async def get_company_financial_overview(
     company_id: int,
     start_date: Optional[str] = None,

@@ -8,6 +8,7 @@ from teif.db.models.base import Base
 from teif.db.models.company import Company
 from teif.db.models.invoice import Invoice
 from teif.db.repositories.invoice_repository import InvoiceRepository
+from teif.db.schemas.invoice import InvoiceStatus
 
 # Use relative imports since we're inside the package
 

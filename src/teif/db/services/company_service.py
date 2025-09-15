@@ -1,10 +1,11 @@
 from datetime import date, datetime
 from typing import Dict, List, Optional, Any, Union
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..models.company import Company, CompanyContact, ContactCommunication
-from ..models.invoice import InvoiceStatus
+from ..models.invoice import Invoice, InvoiceStatus
 from ..repositories.company_repository import CompanyRepository
 from ..repositories.invoice_repository import InvoiceRepository
 from ..schemas.company import CompanyCreate, CompanyUpdate, CompanyContactCreate

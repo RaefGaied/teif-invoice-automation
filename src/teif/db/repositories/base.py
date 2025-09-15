@@ -31,18 +31,31 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         return self.db.query(self.model).filter(self.model.id == id).first()
 
     def get_multi(
-        self, *, skip: int = 0, limit: int = 100
+        self, *, skip: int = 0, limit: int = 100, status: Optional[str] = None, company_id: Optional[int] = None
     ) -> List[ModelType]:
         """Get multiple records with pagination.
         
         Args:
             skip: Number of records to skip
             limit: Maximum number of records to return
+            status: Optional status filter
+            company_id: Optional company ID filter
             
         Returns:
             List of model instances
         """
-        return self.db.query(self.model).offset(skip).limit(limit).all()
+        query = self.db.query(self.model)
+        
+        # Apply filters if provided
+        if status is not None:
+            query = query.filter(self.model.status == status)
+        if company_id is not None:
+            query = query.filter(
+                (self.model.supplier_id == company_id) | 
+                (self.model.customer_id == company_id)
+            )
+            
+        return query.offset(skip).limit(limit).all()
 
     def create(self, *, obj_in: CreateSchemaType) -> ModelType:
         """Create a new record.

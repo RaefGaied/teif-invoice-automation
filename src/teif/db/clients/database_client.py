@@ -14,12 +14,12 @@ from sqlalchemy.pool import QueuePool
 from contextlib import contextmanager
 import json
 
-from .models import (
+from ..models import (
     Base, TEIFReferenceCode, Company, CompanyReference, CompanyContact, 
     ContactCommunication, Invoice, InvoiceLine, InvoiceTax, InvoicePayment,
     InvoiceReference, InvoiceSignature
 )
-from ..config import get_database_config
+from ...config import get_database_config
 
 # Configuration du logging
 logging.basicConfig(level=logging.INFO)
@@ -37,7 +37,7 @@ class SQLServerDatabaseManager:
         
         Args:
             database_url: URL de connexion SQL Server
-        """
+        """ 
         if database_url is None:
             config = get_database_config()
             database_url = config['url']
@@ -968,7 +968,7 @@ class SQLServerDatabaseManager:
         """Retourne des informations détaillées sur la base SQL Server"""
         try:
             with self.get_session() as session:
-                from .models import Company, Invoice, InvoiceLine, TEIFReferenceCode
+                from ..models import Company, Invoice, InvoiceLine, TEIFReferenceCode
                 
                 # Informations générales
                 version_result = session.execute(text("SELECT @@VERSION"))

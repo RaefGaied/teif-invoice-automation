@@ -1,37 +1,36 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
-  Box,
-  Button,
-  FormControl,
-  FormLabel,
-  Input,
-  Select,
-  Textarea,
-  VStack,
-  HStack,
-  Text,
-  useToast,
-  SimpleGrid,
-  IconButton,
-  Divider,
-  NumberInput,
-  NumberInputField,
-  NumberInputStepper,
-  NumberIncrementStepper,
-  NumberDecrementStepper,
-  useDisclosure,
-  Modal,
-  ModalOverlay,
-  ModalContent,
-  ModalHeader,
-  ModalFooter,
-  ModalBody,
-  ModalCloseButton,
+    Box,
+    Button,
+    FormControl,
+    FormLabel,
+    Input,
+    Select,
+    Textarea,
+    VStack,
+    HStack,
+    Text,
+    useToast,
+    SimpleGrid,
+    IconButton,
+    Divider,
+    NumberInput,
+    NumberInputField,
+    NumberInputStepper,
+    NumberIncrementStepper,
+    NumberDecrementStepper,
+    useDisclosure,
+    Modal,
+    ModalOverlay,
+    ModalContent,
+    ModalHeader,
+    ModalFooter,
+    ModalBody,
+    ModalCloseButton,
 } from "@chakra-ui/react";
 
-
 import { AddIcon, DeleteIcon } from '@chakra-ui/icons';
-import { useForm, Controller, useFieldArray } from 'react-hook-form';
+import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
 import { invoiceApi, companyApi } from '../services/api';
@@ -78,6 +77,19 @@ interface Company {
     // Add other company fields as needed
 }
 
+type InvoiceFormData = {
+    invoice_number: string;
+    issue_date: string;
+    due_date: string;
+    company_id: number;
+    items: Array<{
+        description: string;
+        quantity: number;
+        unit_price: number;
+        tax_rate: number;
+    }>;
+};
+
 const InvoiceForm: React.FC<InvoiceFormProps> = ({
     onSuccess,
     initialData,
@@ -90,14 +102,14 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({
     const toast = useToast();
 
     const {
-        control,
-        handleSubmit,
         register,
+        handleSubmit,
+        control,
         formState: { errors },
+        setValue,
         reset,
         watch,
-        setValue,
-    } = useForm({
+    } = useForm<InvoiceFormData>({
         resolver: yupResolver(invoiceSchema),
         defaultValues: initialData || {
             invoice_number: '',
@@ -326,7 +338,7 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({
 
                                 <SimpleGrid columns={{ base: 1, md: 4 }} spacing={4}>
                                     <FormControl
-                                        isInvalid={!!errors.items?.[index]?.description}
+                                        isInvalid={!!errors.items && !!errors.items[index]?.description}
                                     >
                                         <FormLabel>Description *</FormLabel>
                                         <Input
@@ -334,11 +346,11 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({
                                             placeholder="Item description"
                                         />
                                         <Text color="red.500" fontSize="xs" mt={1}>
-                                            {errors.items?.[index]?.description?.message as string}
+                                            {errors.items && errors.items[index]?.description?.message as string}
                                         </Text>
                                     </FormControl>
 
-                                    <FormControl isInvalid={!!errors.items?.[index]?.quantity}>
+                                    <FormControl isInvalid={!!errors.items && !!errors.items[index]?.quantity}>
                                         <FormLabel>Quantity *</FormLabel>
                                         <NumberInput
                                             min={1}
@@ -358,11 +370,11 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({
                                             </NumberInputStepper>
                                         </NumberInput>
                                         <Text color="red.500" fontSize="xs" mt={1}>
-                                            {errors.items?.[index]?.quantity?.message as string}
+                                            {errors.items && errors.items[index]?.quantity?.message as string}
                                         </Text>
                                     </FormControl>
 
-                                    <FormControl isInvalid={!!errors.items?.[index]?.unit_price}>
+                                    <FormControl isInvalid={!!errors.items && !!errors.items[index]?.unit_price}>
                                         <FormLabel>Unit Price *</FormLabel>
                                         <NumberInput
                                             min={0}
@@ -383,11 +395,11 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({
                                             />
                                         </NumberInput>
                                         <Text color="red.500" fontSize="xs" mt={1}>
-                                            {errors.items?.[index]?.unit_price?.message as string}
+                                            {errors.items && errors.items[index]?.unit_price?.message as string}
                                         </Text>
                                     </FormControl>
 
-                                    <FormControl isInvalid={!!errors.items?.[index]?.tax_rate}>
+                                    <FormControl isInvalid={!!errors.items && !!errors.items[index]?.tax_rate}>
                                         <FormLabel>Tax Rate (%) *</FormLabel>
                                         <NumberInput
                                             min={0}
@@ -413,7 +425,7 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({
                                             </NumberInputStepper>
                                         </NumberInput>
                                         <Text color="red.500" fontSize="xs" mt={1}>
-                                            {errors.items?.[index]?.tax_rate?.message as string}
+                                            {errors.items && errors.items[index]?.tax_rate?.message as string}
                                         </Text>
                                     </FormControl>
                                 </SimpleGrid>

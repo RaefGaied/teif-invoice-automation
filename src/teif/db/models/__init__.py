@@ -12,12 +12,17 @@ Model Categories:
 - Signature: Digital signatures and XML generation
 """
 
+# Import base classes first
 from .base import Base, BaseModel, TimestampMixin
+
+# Import models that don't have dependencies
 from .company import Company, CompanyReference, CompanyContact, ContactCommunication
-from .invoice import Invoice, InvoiceDate, InvoiceLine, InvoiceReference, AdditionalDocument, SpecialCondition
+
+# Then import models with dependencies
 from .tax import LineTax, InvoiceTax, InvoiceMonetaryAmount
 from .payment import PaymentTerm, PaymentMean
 from .signature import InvoiceSignature, GeneratedXmlFile
+from .invoice import Invoice, InvoiceDate, InvoiceLine, InvoiceReference, AdditionalDocument, SpecialCondition
 
 __all__ = [
     # Base classes

@@ -6,23 +6,19 @@ in the Tunisian Electronic Invoice Format (TEIF) system.
 """
 
 from decimal import Decimal
-from typing import Optional, TYPE_CHECKING
+from typing import Optional
 
 from sqlalchemy import (
     String, ForeignKey, Numeric, Integer, CheckConstraint
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from .base import BaseModel
-
-if TYPE_CHECKING:
-    from .invoice import Invoice
-    from .invoice_line import InvoiceLine
+from .base import CreatedAtModel
 
 
-class LineTax(BaseModel):
+class LineTax(CreatedAtModel):
     """
-    Tax information for individual invoice lines.
+    Tax information for invoice lines.
     
     Represents taxes applied to specific line items in an invoice,
     such as VAT or stamp duties.
@@ -32,7 +28,6 @@ class LineTax(BaseModel):
     line_id: Mapped[int] = mapped_column(
         ForeignKey('invoice_lines.id', ondelete='CASCADE'),
         nullable=False,
-        index=True,
         comment="Reference to the invoice line"
     )
     tax_code: Mapped[str] = mapped_column(
@@ -71,16 +66,13 @@ class LineTax(BaseModel):
     )
     
     # Relationships
-    line: Mapped["InvoiceLine"] = relationship(
-        "InvoiceLine", 
-        back_populates="taxes"
-    )
+    line: Mapped["InvoiceLine"] = relationship("InvoiceLine", back_populates="taxes")
     
     def __repr__(self) -> str:
         return f"<LineTax(code='{self.tax_code}', rate={self.tax_rate}%, amount={self.tax_amount})>"
 
 
-class InvoiceTax(BaseModel):
+class InvoiceTax(CreatedAtModel):
     """
     Tax information at the invoice level.
     
@@ -131,16 +123,13 @@ class InvoiceTax(BaseModel):
     )
     
     # Relationships
-    invoice: Mapped["Invoice"] = relationship(
-        "Invoice", 
-        back_populates="taxes"
-    )
+    invoice: Mapped["Invoice"] = relationship("Invoice", back_populates="taxes")
     
     def __repr__(self) -> str:
-        return f"<InvoiceTax(code='{self.tax_code}', rate={self.tax_rate}%, amount={self.tax_amount})>"
+        return f"<InvoiceTax(type='{self.tax_type}', rate={self.tax_rate}%, amount={self.tax_amount})>"
 
 
-class InvoiceMonetaryAmount(BaseModel):
+class InvoiceMonetaryAmount(CreatedAtModel):
     """
     Monetary amounts related to an invoice (MOA section).
     
@@ -181,10 +170,7 @@ class InvoiceMonetaryAmount(BaseModel):
     )
     
     # Relationships
-    invoice: Mapped["Invoice"] = relationship(
-        "Invoice", 
-        back_populates="monetary_amounts"
-    )
+    invoice: Mapped["Invoice"] = relationship("Invoice", back_populates="monetary_amounts")
     
     def __repr__(self) -> str:
         return f"<InvoiceMonetaryAmount(type='{self.amount_type_code}', amount={self.amount} {self.currency})>"

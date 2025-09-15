@@ -4,8 +4,7 @@ from typing import List, Optional
 from sqlalchemy import String, ForeignKey, Text, CheckConstraint, Index, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
-from teif.db.models.invoice import Invoice
-from .base import BaseModel
+from .base import BaseModel, CreatedAtModel
 
 class Company(BaseModel):
     """Company entity for TEIF system."""
@@ -19,32 +18,43 @@ class Company(BaseModel):
     tax_id: Mapped[Optional[str]] = mapped_column(String(50))
     commercial_register: Mapped[Optional[str]] = mapped_column(String(50))
     
-    # Address
+    # Contact Information
     address_street: Mapped[Optional[str]] = mapped_column(String(500))
     address_city: Mapped[Optional[str]] = mapped_column(String(100))
     address_postal_code: Mapped[Optional[str]] = mapped_column(String(20))
     address_country_code: Mapped[str] = mapped_column(String(2), default='TN')
     address_language: Mapped[str] = mapped_column(String(2), default='FR')
-    
-    # Contact
     phone: Mapped[Optional[str]] = mapped_column(String(50))
     email: Mapped[Optional[str]] = mapped_column(String(255))
     fax: Mapped[Optional[str]] = mapped_column(String(50))
     website: Mapped[Optional[str]] = mapped_column(String(255))
     
-    # Status
-    is_active: Mapped[bool] = mapped_column(
-        default=True,
-        nullable=False,
-        server_default='1',
-        comment='Indicates if the company is active'
+    # Relationships
+    references: Mapped[List["CompanyReference"]] = relationship(
+        "CompanyReference", 
+        back_populates="company",
+        cascade="all, delete-orphan"
     )
     
-    # Relationships
-    references: Mapped[List["CompanyReference"]] = relationship(back_populates="company", cascade="all, delete-orphan")
-    contacts: Mapped[List["CompanyContact"]] = relationship(back_populates="company", cascade="all, delete-orphan")
-    supplier_invoices: Mapped[List["Invoice"]] = relationship(foreign_keys="Invoice.supplier_id", back_populates="supplier")
-    customer_invoices: Mapped[List["Invoice"]] = relationship(foreign_keys="Invoice.customer_id", back_populates="customer")
+    contacts: Mapped[List["CompanyContact"]] = relationship(
+        "CompanyContact", 
+        back_populates="company",
+        cascade="all, delete-orphan"
+    )
+    
+    supplier_invoices: Mapped[List["Invoice"]] = relationship(
+        "Invoice", 
+        foreign_keys="[Invoice.supplier_id]", 
+        back_populates="supplier",
+        cascade="all, delete-orphan"
+    )
+    
+    customer_invoices: Mapped[List["Invoice"]] = relationship(
+        "Invoice", 
+        foreign_keys="[Invoice.customer_id]", 
+        back_populates="customer",
+        cascade="all, delete-orphan"
+    )
     
     # Table metadata
     __table_args__ = (
@@ -57,15 +67,17 @@ class Company(BaseModel):
         # Composite index for common search patterns
         Index('idx_company_name_city', 'name', 'address_city'),
         
-        # Simple index on is_active instead of partial index
-        Index('idx_company_active', 'is_active'),
-        
         # Unique constraints
         UniqueConstraint('vat_number', name='uq_company_vat'),
         UniqueConstraint('identifier', name='uq_company_identifier'),
         
         # Email validation constraint
         CheckConstraint("email IS NULL OR email LIKE '%@%.%'", name='valid_email_check'),
+        
+        {
+            'comment': 'Companies and organizations that are suppliers or customers in the system',
+            'sqlite_autoincrement': True
+        }
     )
     
     @validates('email')
@@ -75,31 +87,59 @@ class Company(BaseModel):
         return email
     
     def __repr__(self) -> str:
-        return f"<Company(identifier='{self.identifier}', name='{self.name}')>"
+        return f"<Company(name='{self.name}', vat='{self.vat_number}')>"
 
-class CompanyReference(BaseModel):
+class CompanyReference(CreatedAtModel):
     """References for companies according to TEIF standard."""
     __tablename__ = 'company_references'
     
-    company_id: Mapped[int] = mapped_column(ForeignKey('companies.id', ondelete='CASCADE'), nullable=False)
-    reference_type: Mapped[str] = mapped_column(String(10), nullable=False)
-    reference_value: Mapped[str] = mapped_column(String(100), nullable=False)
-    description: Mapped[Optional[str]] = mapped_column(String(255))
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey('companies.id', ondelete='CASCADE'), 
+        nullable=False
+    )
+    reference_type: Mapped[str] = mapped_column(
+        String(10), 
+        nullable=False,
+        comment="Reference type (e.g., 'VA' for VAT, 'FC' for Fiscal Code)"
+    )
+    reference_value: Mapped[str] = mapped_column(
+        String(100), 
+        nullable=False,
+        comment="The reference value"
+    )
+    description: Mapped[Optional[str]] = mapped_column(
+        String(255),
+        comment="Optional description of the reference"
+    )
     
+    # Relationships
     company: Mapped["Company"] = relationship("Company", back_populates="references")
     
     def __repr__(self) -> str:
         return f"<CompanyReference(type='{self.reference_type}', value='{self.reference_value}')>"
 
-class CompanyContact(BaseModel):
+class CompanyContact(CreatedAtModel):
     """Contact persons for a company."""
     __tablename__ = 'company_contacts'
     
-    company_id: Mapped[int] = mapped_column(ForeignKey('companies.id', ondelete='CASCADE'), nullable=False)
-    function_code: Mapped[Optional[str]] = mapped_column(String(10))
-    contact_name: Mapped[Optional[str]] = mapped_column(String(255))
-    contact_identifier: Mapped[Optional[str]] = mapped_column(String(50))
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey('companies.id', ondelete='CASCADE'), 
+        nullable=False
+    )
+    function_code: Mapped[Optional[str]] = mapped_column(
+        String(10),
+        comment="Contact function code (e.g., 'BU' for buyer, 'SU' for supplier)"
+    )
+    contact_name: Mapped[Optional[str]] = mapped_column(
+        String(255),
+        comment="Full name of the contact person"
+    )
+    contact_identifier: Mapped[Optional[str]] = mapped_column(
+        String(50),
+        comment="Unique identifier for the contact"
+    )
     
+    # Relationships
     company: Mapped["Company"] = relationship("Company", back_populates="contacts")
     communications: Mapped[List["ContactCommunication"]] = relationship(
         "ContactCommunication", 
@@ -108,17 +148,29 @@ class CompanyContact(BaseModel):
     )
     
     def __repr__(self) -> str:
-        return f"<CompanyContact(name='{self.contact_name}')>"
+        return f"<CompanyContact(name='{self.contact_name}', function='{self.function_code}')>"
 
-class ContactCommunication(BaseModel):
+class ContactCommunication(CreatedAtModel):
     """Communication methods for company contacts."""
     __tablename__ = 'contact_communications'
     
-    contact_id: Mapped[int] = mapped_column(ForeignKey('company_contacts.id', ondelete='CASCADE'), nullable=False)
-    communication_type: Mapped[str] = mapped_column(String(10), nullable=False)
-    communication_value: Mapped[str] = mapped_column(String(255), nullable=False)
+    contact_id: Mapped[int] = mapped_column(
+        ForeignKey('company_contacts.id', ondelete='CASCADE'), 
+        nullable=False
+    )
+    communication_type: Mapped[str] = mapped_column(
+        String(10), 
+        nullable=False,
+        comment="Type of communication (e.g., 'TE' for telephone, 'EM' for email)"
+    )
+    communication_value: Mapped[str] = mapped_column(
+        String(255), 
+        nullable=False,
+        comment="The communication value (e.g., phone number, email)"
+    )
     
+    # Relationships
     contact: Mapped["CompanyContact"] = relationship("CompanyContact", back_populates="communications")
     
     def __repr__(self) -> str:
-        return f"<ContactCommunication(type='{self.communication_type}')>"
+        return f"<ContactCommunication(type='{self.communication_type}', value='{self.communication_value}')>"

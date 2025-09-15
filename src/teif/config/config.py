@@ -58,28 +58,26 @@ def get_database_config() -> Dict[str, Any]:
         server = os.getenv('SQLSERVER_HOST', 'localhost')
         port = os.getenv('SQLSERVER_PORT', '1433')
         database = os.getenv('SQLSERVER_DATABASE', 'TEIF_Complete_DB')
-        username = os.getenv('SQLSERVER_USER', 'sa')
-        password = os.getenv('SQLSERVER_PASSWORD', 'YourStrong!Passw0rd')
-        driver = os.getenv('SQLSERVER_DRIVER', 'ODBC Driver 17 for SQL Server')
+        driver = 'ODBC Driver 17 for SQL Server'
         
-        # Encoder les paramètres pour l'URL
-        encoded_password = quote_plus(password) if password else ''
-        encoded_driver = quote_plus(driver)
+        # Print debug info
+        print(f"\n=== Database Connection Debug ===")
+        print(f"Server: {server}")
+        print(f"Port: {port}")
+        print(f"Database: {database}")
+        print(f"Driver: {driver}")
         
-        # Construction de l'URL de connexion
-        if password:
-            connection_string = (
-                f"mssql+pyodbc://{username}:{encoded_password}@{server}:{port}/"
-                f"{database}?driver={encoded_driver}&TrustServerCertificate=yes"
-                f"&Encrypt=yes&Connection+Timeout=30&Command+Timeout=60"
-            )
-        else:
-            # Authentification Windows
-            connection_string = (
-                f"mssql+pyodbc://{server}:{port}/{database}?"
-                f"driver={encoded_driver}&trusted_connection=yes"
-                f"&TrustServerCertificate=yes&Encrypt=yes"
-            )
+        # Use Windows Authentication with default instance
+        connection_string = (
+            f"mssql+pyodbc://{server}/{database}?"
+            f"driver={quote_plus(driver)}&"
+            "trusted_connection=yes&"
+            "TrustServerCertificate=yes&"
+            "Encrypt=yes&"
+            "Connection+Timeout=30"
+        )
+        
+        print(f"\nConnection String: {connection_string}\n")
         
         return {
             'type': 'sqlserver',
@@ -87,13 +85,13 @@ def get_database_config() -> Dict[str, Any]:
             'server': server,
             'port': int(port),
             'database': database,
-            'username': username,
+            'username': None,  # Not used with Windows Auth
             'driver': driver,
             'pool_size': int(os.getenv('SQLSERVER_POOL_SIZE', '15')),
             'max_overflow': int(os.getenv('SQLSERVER_MAX_OVERFLOW', '25')),
             'pool_timeout': int(os.getenv('SQLSERVER_POOL_TIMEOUT', '30')),
             'pool_recycle': int(os.getenv('SQLSERVER_POOL_RECYCLE', '3600')),
-            'echo': is_development() and os.getenv('SQL_ECHO', 'false').lower() == 'true'
+            'echo': True  # Enable SQL echo for debugging
         }
     
     elif db_type == 'postgresql':
@@ -576,3 +574,23 @@ if not is_testing():
         logger.warning("Erreurs de configuration détectées:")
         for error in config_errors:
             logger.warning(f"  - {error}")
+
+# Create a settings object that exposes all configurations
+class Settings:
+    def __init__(self):
+        self.database = get_database_config()
+        self.teif = get_teif_config()
+        self.signature = get_signature_config()
+        self.output = get_output_config()
+        self.performance = get_performance_config()
+        self.security = get_security_config()
+        self.test = get_test_config()
+        self.app = get_app_config()
+        self.database_url = get_database_url()
+        self.sqlserver_connection_string = get_sqlserver_connection_string()
+
+# Create a singleton instance
+settings = Settings()
+
+# Export settings as the default export
+__all__ = ['settings']

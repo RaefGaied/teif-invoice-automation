@@ -23,24 +23,24 @@ class Base(DeclarativeBase):
     """
     pass
 
-class TimestampMixin:
+class CreatedAtMixin:
+    """
+    Mixin that adds created_at column to a model.
+    
+    Attributes:
+        created_at: The timestamp when the record was created.
+    """
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), nullable=False)
+
+class TimestampMixin(CreatedAtMixin):
     """
     Mixin that adds timestamp columns to a model.
     
     Attributes:
         created_at: The timestamp when the record was created.
-        updated_at: The timestamp when the record was last updated.
+        updated_at: The timestamp when the record was last updated (optional).
     """
-    
-    @declared_attr
-    def created_at(cls) -> Mapped[datetime]:
-        """Database column for creation timestamp."""
-        return mapped_column(DateTime, default=func.now(), nullable=False)
-    
-    @declared_attr
-    def updated_at(cls) -> Mapped[datetime]:
-        """Database column for last update timestamp."""
-        return mapped_column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=None, onupdate=func.now(), nullable=True)
 
 class BaseModel(Base, TimestampMixin):
     """
@@ -100,3 +100,29 @@ class BaseModel(Base, TimestampMixin):
     def __repr__(self) -> str:
         """Return a string representation of the model instance."""
         return f"<{self.__class__.__name__}(id={self.id})>"
+
+class CreatedAtModel(Base, CreatedAtMixin):
+    """
+    Base model with only created_at timestamp (no updated_at).
+    
+    Use this for models that don't need an updated_at field.
+    """
+    __abstract__ = True
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    
+    def to_dict(self, exclude: Tuple[str, ...] = ()) -> Dict[str, Any]:
+        """
+        Convert model to dictionary representation.
+        
+        Args:
+            exclude: Tuple of field names to exclude from the result.
+            
+        Returns:
+            Dictionary containing the model's fields and values.
+        """
+        return {
+            column.name: getattr(self, column.name)
+            for column in self.__table__.columns
+            if column.name not in exclude
+        }
