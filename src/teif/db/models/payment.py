@@ -11,58 +11,93 @@ from typing import Optional, TYPE_CHECKING
 
 from sqlalchemy import (
     String, ForeignKey, Date, Numeric, 
-    CheckConstraint, Integer, func
+    CheckConstraint, Integer, func, Boolean
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from .base import BaseModel
+from .base import BaseModel, CreatedAtModel
 
 if TYPE_CHECKING:
     from .invoice import Invoice
 
-class PaymentTerm(BaseModel):
+class PaymentTerm(CreatedAtModel):
     """
-    Payment terms and conditions for an invoice.
+    Payment terms for an invoice.
     
-    Represents the payment terms associated with an invoice, including
-    discount percentages and due dates for early payment.
+    This model stores information about the payment terms and conditions
+    for an invoice, including due dates, discounts, and other relevant details.
     """
     __tablename__ = 'payment_terms'
     
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     invoice_id: Mapped[int] = mapped_column(
         ForeignKey('invoices.id', ondelete='CASCADE'),
         nullable=False,
         comment="Reference to the parent invoice"
     )
+    
+    # Payment terms information
     payment_terms_code: Mapped[Optional[str]] = mapped_column(
         String(10),
-        comment="Payment terms code (e.g., 'I-10')"
+        comment="Payment terms code (e.g., 'I-37' for payment terms)"
     )
-    description: Mapped[Optional[str]] = mapped_column(
-        String(500),
-        comment="Human-readable description of payment terms"
+    
+    # Payment due dates
+    due_date: Mapped[Optional[date]] = mapped_column(
+        Date,
+        comment="The date by which the payment is due"
     )
+    
+    # Discount information
     discount_percent: Mapped[Optional[Decimal]] = mapped_column(
         Numeric(5, 2),
         comment="Discount percentage for early payment (e.g., 2.0 for 2%)"
     )
+    
     discount_due_date: Mapped[Optional[date]] = mapped_column(
         Date,
-        comment="Last date to qualify for early payment discount"
-    )
-    payment_due_date: Mapped[Optional[date]] = mapped_column(
-        Date,
-        comment="Final due date for payment"
+        comment="Last date to take advantage of the early payment discount"
     )
     
-    # Relationships
+    # Payment reference information
+    payment_reference: Mapped[Optional[str]] = mapped_column(
+        String(50),
+        comment="Payment reference or identifier"
+    )
+    
+    # Notes and additional information
+    notes: Mapped[Optional[str]] = mapped_column(
+        String(500),
+        comment="Any additional notes about the payment terms"
+    )
+    
+    # Relationship to Invoice
     invoice: Mapped["Invoice"] = relationship(
         "Invoice", 
-        back_populates="payment_terms"
+        back_populates="payment_terms_list"
     )
     
+    # Table configuration
+    __table_args__ = (
+        {
+            'comment': 'Payment terms for invoices',
+            'sqlite_autoincrement': True
+        }
+    )
+    
+    def to_teif_dict(self) -> dict:
+        """Convert to TEIF-compatible dictionary."""
+        return {
+            "payment_terms_code": self.payment_terms_code,
+            "due_date": self.due_date.isoformat() if self.due_date else None,
+            "discount_percent": float(self.discount_percent) if self.discount_percent else None,
+            "discount_due_date": self.discount_due_date.isoformat() if self.discount_due_date else None,
+            "payment_reference": self.payment_reference,
+            "notes": self.notes
+        }
+    
     def __repr__(self) -> str:
-        return f"<PaymentTerm(code='{self.payment_terms_code}')>"
+        return f"<PaymentTerm(id={self.id}, invoice_id={self.invoice_id}, due_date={self.due_date})>"
 
 
 class PaymentMean(BaseModel):

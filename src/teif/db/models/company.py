@@ -1,35 +1,110 @@
 """Company models for TEIF system with contacts and references."""
 
-from typing import List, Optional
-from sqlalchemy import String, ForeignKey, Text, CheckConstraint, Index, UniqueConstraint
-from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
+from typing import List, Optional, Dict, Any
+from sqlalchemy import String, ForeignKey, Text, CheckConstraint, Index, UniqueConstraint, JSON
+from sqlalchemy.orm import Mapped, mapped_column, relationship, validates, Session
+from sqlalchemy.sql import func
 
 from .base import BaseModel, CreatedAtModel
 
 class Company(BaseModel):
-    """Company entity for TEIF system."""
+    """Company entity for TEIF system with TEIF 1.8.8 compliance."""
     __tablename__ = 'companies'
     
-    # Identifiers
-    identifier: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True, 
-                                         comment="Unique company identifier")
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    vat_number: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
-    tax_id: Mapped[Optional[str]] = mapped_column(String(50))
-    commercial_register: Mapped[Optional[str]] = mapped_column(String(50))
+    # ===== Identifiers =====
+    identifier: Mapped[str] = mapped_column(
+        String(50), 
+        unique=True, 
+        nullable=False, 
+        index=True,
+        comment="Unique company identifier (I-01 for TEIF)"
+    )
     
-    # Contact Information
-    address_street: Mapped[Optional[str]] = mapped_column(String(500))
-    address_city: Mapped[Optional[str]] = mapped_column(String(100))
-    address_postal_code: Mapped[Optional[str]] = mapped_column(String(20))
-    address_country_code: Mapped[str] = mapped_column(String(2), default='TN')
-    address_language: Mapped[str] = mapped_column(String(2), default='FR')
-    phone: Mapped[Optional[str]] = mapped_column(String(50))
-    email: Mapped[Optional[str]] = mapped_column(String(255))
-    fax: Mapped[Optional[str]] = mapped_column(String(50))
-    website: Mapped[Optional[str]] = mapped_column(String(255))
+    name: Mapped[str] = mapped_column(
+        String(255), 
+        nullable=False,
+        comment="Company name (PartnerName in TEIF)"
+    )
     
-    # Relationships
+    vat_number: Mapped[str] = mapped_column(
+        String(50), 
+        nullable=False, 
+        index=True,
+        comment="VAT registration number (I-1602 in TEIF)"
+    )
+    
+    tax_id: Mapped[Optional[str]] = mapped_column(
+        String(50),
+        comment="Tax identification number (I-01 in TEIF)"
+    )
+    
+    commercial_register: Mapped[Optional[str]] = mapped_column(
+        String(50),
+        comment="Commercial register number (I-815 in TEIF)"
+    )
+    
+    # ===== Address Information =====
+    address_street: Mapped[Optional[str]] = mapped_column(
+        String(500),
+        comment="Street address (Street in TEIF)"
+    )
+    
+    address_city: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        comment="City name (CityName in TEIF)"
+    )
+    
+    address_postal_code: Mapped[Optional[str]] = mapped_column(
+        String(20),
+        comment="Postal/ZIP code (PostalCode in TEIF)"
+    )
+    
+    address_country_code: Mapped[str] = mapped_column(
+        String(2), 
+        default='TN',
+        comment="ISO 3166-1 alpha-2 country code (Country in TEIF)"
+    )
+    
+    address_language: Mapped[str] = mapped_column(
+        String(2), 
+        default='FR',
+        comment="Language code for address (lang attribute in TEIF)"
+    )
+    
+    # ===== Contact Information =====
+    phone: Mapped[Optional[str]] = mapped_column(
+        String(50),
+        comment="Primary phone number (I-101 in TEIF)"
+    )
+    
+    email: Mapped[Optional[str]] = mapped_column(
+        String(255),
+        comment="Primary email address (I-102 in TEIF)"
+    )
+    
+    fax: Mapped[Optional[str]] = mapped_column(
+        String(50),
+        comment="Fax number (I-118 in TEIF)"
+    )
+    
+    website: Mapped[Optional[str]] = mapped_column(
+        String(255),
+        comment="Company website URL (I-104 in TEIF)"
+    )
+    
+    # ===== Additional TEIF-specific fields =====
+    function_code: Mapped[Optional[str]] = mapped_column(
+        String(10),
+        comment="Function code for TEIF (e.g., 'I-62' for seller, 'I-64' for buyer)"
+    )
+    
+    additional_info: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        JSON,
+        nullable=True,
+        comment="Additional TEIF-specific information in JSON format"
+    )
+    
+    # ===== Relationships =====
     references: Mapped[List["CompanyReference"]] = relationship(
         "CompanyReference", 
         back_populates="company",
@@ -42,21 +117,20 @@ class Company(BaseModel):
         cascade="all, delete-orphan"
     )
     
+    # Relationships with Invoice model (viewonly to prevent conflicts)
     supplier_invoices: Mapped[List["Invoice"]] = relationship(
         "Invoice", 
         foreign_keys="[Invoice.supplier_id]", 
-        back_populates="supplier",
-        cascade="all, delete-orphan"
+        viewonly=True
     )
     
     customer_invoices: Mapped[List["Invoice"]] = relationship(
         "Invoice", 
         foreign_keys="[Invoice.customer_id]", 
-        back_populates="customer",
-        cascade="all, delete-orphan"
+        viewonly=True
     )
     
-    # Table metadata
+    # ===== Table Configuration =====
     __table_args__ = (
         # Single column indexes
         Index('idx_company_vat', 'vat_number'),
@@ -68,8 +142,8 @@ class Company(BaseModel):
         Index('idx_company_name_city', 'name', 'address_city'),
         
         # Unique constraints
-        UniqueConstraint('vat_number', name='uq_company_vat'),
-        UniqueConstraint('identifier', name='uq_company_identifier'),
+        UniqueConstraint('vat_number', name='uq_company_vat', deferrable=True, initially='DEFERRED'),
+        UniqueConstraint('identifier', name='uq_company_identifier', deferrable=True, initially='DEFERRED'),
         
         # Email validation constraint
         CheckConstraint("email IS NULL OR email LIKE '%@%.%'", name='valid_email_check'),
@@ -80,11 +154,71 @@ class Company(BaseModel):
         }
     )
     
+    # ===== Methods =====
+    def to_teif_dict(self, function_code: str = None) -> Dict[str, Any]:
+        """Convert company to TEIF-compatible dictionary."""
+        return {
+            "identifier": self.identifier,
+            "name": self.name,
+            "vat_number": self.vat_number,
+            "function_code": function_code or self.function_code,
+            "address": {
+                "street": self.address_street or "",
+                "city": self.address_city or "",
+                "postal_code": self.address_postal_code or "",
+                "country_code": self.address_country_code,
+                "lang": self.address_language
+            },
+            "references": [
+                {
+                    "type": ref.reference_type,
+                    "value": ref.reference_value,
+                    "description": ref.description
+                }
+                for ref in self.references
+            ],
+            "contacts": [
+                {
+                    "function_code": contact.function_code,
+                    "name": contact.contact_name,
+                    "identifier": contact.contact_identifier,
+                    "communications": [
+                        {
+                            "type": comm.communication_type,
+                            "value": comm.communication_value
+                        }
+                        for comm in contact.communications
+                    ]
+                }
+                for contact in self.contacts
+            ]
+        }
+    
     @validates('email')
-    def validate_email(self, key, email):
+    def validate_email(self, key: str, email: Optional[str]) -> Optional[str]:
         if email and '@' not in email:
             raise ValueError("Invalid email format")
         return email
+    
+    @classmethod
+    def get_or_create(
+        cls, 
+        db: Session, 
+        identifier: str, 
+        defaults: Optional[Dict[str, Any]] = None
+    ) -> 'Company':
+        """Get or create a company with the given identifier."""
+        company = db.query(cls).filter(cls.identifier == identifier).first()
+        if company:
+            return company
+            
+        if not defaults:
+            defaults = {}
+            
+        company = cls(identifier=identifier, **defaults)
+        db.add(company)
+        db.flush()
+        return company
     
     def __repr__(self) -> str:
         return f"<Company(name='{self.name}', vat='{self.vat_number}')>"

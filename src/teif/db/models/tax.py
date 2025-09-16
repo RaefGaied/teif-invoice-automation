@@ -6,7 +6,7 @@ in the Tunisian Electronic Invoice Format (TEIF) system.
 """
 
 from decimal import Decimal
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from sqlalchemy import (
     String, ForeignKey, Numeric, Integer, CheckConstraint
@@ -15,6 +15,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import CreatedAtModel
 
+if TYPE_CHECKING:
+    from .invoice import Invoice, InvoiceLine
 
 class LineTax(CreatedAtModel):
     """
@@ -65,7 +67,7 @@ class LineTax(CreatedAtModel):
         comment="Currency code list identifier"
     )
     
-    # Relationships
+    # Use string literal for relationship to avoid circular import
     line: Mapped["InvoiceLine"] = relationship("InvoiceLine", back_populates="taxes")
     
     def __repr__(self) -> str:
@@ -99,7 +101,7 @@ class InvoiceTax(CreatedAtModel):
     )
     tax_category: Mapped[Optional[str]] = mapped_column(
         String(10),
-        comment="Tax category (e.g., 'S' for Standard, 'E' for Exempt, 'Z' for Zero-rated)"
+        comment="Tax category (e.g., 'S' for Standard, 'E' for Exempt)"
     )
     tax_rate: Mapped[Decimal] = mapped_column(
         Numeric(5, 2),
@@ -116,17 +118,12 @@ class InvoiceTax(CreatedAtModel):
         nullable=False,
         comment="Calculated tax amount"
     )
-    currency_code_list: Mapped[str] = mapped_column(
-        String(20),
-        default='ISO_4217',
-        comment="Currency code list identifier"
-    )
     
-    # Relationships
+    # Use string literal for relationship to avoid circular import
     invoice: Mapped["Invoice"] = relationship("Invoice", back_populates="taxes")
     
     def __repr__(self) -> str:
-        return f"<InvoiceTax(type='{self.tax_type}', rate={self.tax_rate}%, amount={self.tax_amount})>"
+        return f"<InvoiceTax(code='{self.tax_code}', rate={self.tax_rate}%, amount={self.tax_amount})>"
 
 
 class InvoiceMonetaryAmount(CreatedAtModel):
@@ -169,7 +166,7 @@ class InvoiceMonetaryAmount(CreatedAtModel):
         comment="Currency code list identifier"
     )
     
-    # Relationships
+    # Use string literal for relationship to avoid circular import
     invoice: Mapped["Invoice"] = relationship("Invoice", back_populates="monetary_amounts")
     
     def __repr__(self) -> str:

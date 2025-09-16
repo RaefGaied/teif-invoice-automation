@@ -159,7 +159,7 @@ class GeneratedXmlFile(BaseModel):
     # Relationships
     invoice: Mapped["Invoice"] = relationship(
         "Invoice", 
-        back_populates="xml_files"
+        back_populates="generated_files"
     )
     
     def __repr__(self) -> str:
