@@ -3,7 +3,7 @@ from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session, joinedload, load_only, contains_eager
 from sqlalchemy import and_, or_, func
 
-from ..models.invoice import Invoice, InvoiceLine, InvoiceReference, AdditionalDocument, SpecialCondition
+from ..models.invoice import Invoice, InvoiceLine, InvoiceReference, AdditionalDocument, SpecialCondition, InvoiceStatus
 from ..models.tax import LineTax, InvoiceTax
 from ..models.company import Company
 from .base import BaseRepository
@@ -157,7 +157,7 @@ class InvoiceRepository(BaseRepository[Invoice, InvoiceCreate, InvoiceUpdate]):
             )
             
         if status:
-            query = query.filter(Invoice.status == status)
+            query = query.filter(Invoice.document_status == status)
         
         return query.order_by(Invoice.invoice_date.desc())\
                    .offset(skip)\

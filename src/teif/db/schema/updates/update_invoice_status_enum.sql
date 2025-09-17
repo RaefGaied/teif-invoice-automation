@@ -30,39 +30,45 @@ BEGIN
 END
 GO
 
--- Update the status column with new default and constraint
-ALTER TABLE invoices
-ALTER COLUMN status NVARCHAR(50) NOT NULL;
-
--- Add the default constraint
-ALTER TABLE invoices ADD CONSTRAINT DF_invoices_status DEFAULT 'processing' FOR status;
-
--- Add the check constraint with new enum values (lowercase)
-ALTER TABLE invoices WITH NOCHECK
-ADD CONSTRAINT CK_invoices_status 
-CHECK (status IN ('processing', 'processed', 'error'));
-
--- Update any existing status to match the new values
--- First, check what statuses exist
-SELECT DISTINCT status, COUNT(*) as count 
+-- Update existing statuses to match the new enum values
+-- First check current status distribution
+SELECT status, COUNT(*) as count 
 FROM invoices 
 GROUP BY status 
 ORDER BY count DESC;
 
--- Update all existing statuses to lowercase
+-- Map old statuses to new values
 UPDATE invoices 
-SET status = LOWER(TRIM(status));
+SET status = CASE 
+    WHEN LOWER(TRIM(status)) IN ('draft', 'new') THEN 'draft'
+    WHEN LOWER(TRIM(status)) IN ('processing', 'in_progress', 'in-progress') THEN 'processing'
+    WHEN LOWER(TRIM(status)) IN ('generated', 'processed') THEN 'generated'
+    WHEN LOWER(TRIM(status)) = 'error' THEN 'error'
+    WHEN LOWER(TRIM(status)) = 'uploading' THEN 'uploading'
+    WHEN LOWER(TRIM(status)) = 'uploaded' THEN 'uploaded'
+    WHEN LOWER(TRIM(status)) = 'archived' THEN 'archived'
+    ELSE 'draft'  -- default for any unexpected values
+END;
 
--- Convert any non-matching statuses to 'processing'
-UPDATE invoices 
-SET status = 'processing' 
-WHERE status NOT IN ('processing', 'processed', 'error');
+-- Update the status column to be NOT NULL with new default
+ALTER TABLE invoices
+ALTER COLUMN status NVARCHAR(50) NOT NULL;
+
+-- Add the default constraint
+ALTER TABLE invoices 
+ADD CONSTRAINT DF_invoices_status DEFAULT 'draft' FOR status;
+
+-- Add the check constraint with new enum values
+ALTER TABLE invoices WITH NOCHECK
+ADD CONSTRAINT CK_invoices_status 
+CHECK (status IN ('draft', 'uploading', 'uploaded', 'processing', 'generated', 'error', 'archived'));
 
 -- Recreate the index
 IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_invoices_status')
 BEGIN
     CREATE INDEX IX_invoices_status ON invoices(status);
 END
+GO
 
 -- Verify the update
 SELECT 

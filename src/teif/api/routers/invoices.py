@@ -1,3 +1,4 @@
+import traceback
 from typing import List, Optional, Union, Dict, Any
 from datetime import date, datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form, Response
@@ -9,16 +10,7 @@ from fastapi.responses import JSONResponse
 from src.teif.db.session import get_db
 from src.teif.db.services.invoice_service import InvoiceService
 from src.teif.db.services.company_service import CompanyService
-from src.teif.db.models.invoice import (
-    Invoice as InvoiceModel,
-    InvoiceLine,
-    InvoiceStatus,
-    InvoiceDate,
-    InvoiceReference,
-    AdditionalDocument,
-    SpecialCondition,
-    InvoiceLine
-)
+
 from src.teif.db.models.tax import LineTax, InvoiceTax, InvoiceMonetaryAmount
 from src.teif.db.models.payment import PaymentTerm, PaymentMean
 from src.teif.db.models.signature import InvoiceSignature, GeneratedXmlFile
@@ -29,10 +21,15 @@ from src.teif.db.schemas.invoice import (
     Invoice as InvoiceSchema,
     InvoiceLineCreate,
     InvoiceLine as InvoiceLineSchema,
-    InvoiceStatus
+    InvoiceStatus,
 )
 from src.teif.generator import TEIFGenerator
 import logging
+
+from teif.db.models.invoice import InvoiceLine, InvoiceStatus
+# Add these imports at the top of the file
+from src.teif.db.models.invoice import Invoice as InvoiceModel, InvoiceLine as InvoiceLineModel
+from src.teif.db.schemas.invoice import InvoiceLine as InvoiceLineSchema
 
 logger = logging.getLogger(__name__)
 
@@ -342,66 +339,61 @@ async def export_invoices(
     limit: int = 100,
     db: Session = Depends(get_db)
 ):
+    """
+    Export invoices with filtering by date range, status, and company.
+    
+    Parameters:
+    - start_date: Filter invoices from this date (inclusive)
+    - end_date: Filter invoices until this date (inclusive)
+    - invoice_status: Filter by invoice status (draft, uploading, uploaded, processing, generated, error, archived)
+    - company_id: Filter by company ID (either as supplier or customer)
+    - skip: Number of records to skip for pagination
+    - limit: Maximum number of records to return
+    """
     try:
-        from sqlalchemy.orm import selectinload
-        from src.teif.db.models.invoice import InvoiceLine, InvoiceDate, InvoiceReference
-        from src.teif.db.models.company import Company
-        from src.teif.db.models.tax import LineTax
+        service = InvoiceService(db)
         
-        # Build the base query
-        query = db.query(InvoiceModel)
-        
-        # Apply filters
-        if start_date:
-            query = query.filter(InvoiceModel.invoice_date >= start_date)
-        if end_date:
-            next_day = datetime.combine(end_date, datetime.min.time()) + timedelta(days=1)
-            query = query.filter(InvoiceModel.invoice_date < next_day)
-        if invoice_status:
-            query = query.filter(InvoiceModel.document_status == invoice_status)
-        if company_id:
-            query = query.filter(
-                or_(
-                    InvoiceModel.supplier_id == company_id,
-                    InvoiceModel.customer_id == company_id
-                )
+        # If date range is provided, use the date range query
+        if start_date or end_date:
+            invoices = service.get_invoices_by_date_range(
+                start_date=start_date or date.min,
+                end_date=end_date or date.max,
+                company_id=company_id,
+                status=invoice_status,
+                skip=skip,
+                limit=limit
             )
-        
-        # Get total count before pagination
-        total = query.count()
-        
-        # Apply ordering and pagination
-        query = query.order_by(InvoiceModel.invoice_date.desc())
-        
-        # Use selectinload for better performance with nested relationships
-        query = query.options(
-            selectinload(InvoiceModel.supplier),
-            selectinload(InvoiceModel.customer),
-            selectinload(InvoiceModel.dates),
-            selectinload(InvoiceModel.references),
-            selectinload(InvoiceModel.lines).selectinload(InvoiceLine.taxes),
-        )
-        
-        # Apply pagination
-        invoices = query.offset(skip).limit(limit).all()
+            total = service.invoice_repo.db.query(InvoiceModel).filter(
+                InvoiceModel.invoice_date.between(
+                    start_date or date.min, 
+                    end_date or date.max
+                )
+            ).count()
+        else:
+            # Otherwise, use the basic query
+            invoices = service.get_multi(
+                skip=skip, 
+                limit=limit, 
+                status=invoice_status, 
+                company_id=company_id
+            )
+            total = service.invoice_repo.count()
         
         # Create response with headers
         response = JSONResponse(
-            content=[invoice.to_dict() for invoice in invoices]
+            content=[InvoiceResponse.from_orm(invoice).dict() for invoice in invoices]
         )
         response.headers["X-Total-Count"] = str(total)
         response.headers["X-Page-Size"] = str(limit)
-        response.headers["X-Page-Start"] = str(skip)
+        response.headers["X-Page"] = str(skip // limit + 1 if limit > 0 else 1)
         
         return response
         
     except Exception as e:
-        from fastapi import status as http_status
-        import traceback
-        print(f"Error in export_invoices: {str(e)}")
-        print(traceback.format_exc())
+        logger.error(f"Error in export_invoices: {str(e)}")
+        logger.error(traceback.format_exc())
         raise HTTPException(
-            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=500,  
             detail=f"Error exporting invoices: {str(e)}"
         )
 
