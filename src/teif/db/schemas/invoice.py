@@ -4,11 +4,13 @@ from pydantic import BaseModel, Field, validator
 from enum import Enum
 from decimal import Decimal
 
+
 class InvoiceStatus(str, Enum):
     """Invoice status enumeration."""
-    PROCESSING = "processing"  # Default status when an invoice is first uploaded
-    PROCESSED = "processed"    # When the invoice has been successfully processed and XML generated
-    ERROR = "error"            # When there was an error processing the invoice
+    PROCESSING = "processing"  # Being processed (validation, transformation)
+    GENERATED = "generated"    # TEIF XML successfully generated
+    ERROR = "error"            # Error during processing/generation
+    ARCHIVED = "archived"      # Processed and archived
 
 class InvoiceLineBase(BaseModel):
     description: str
@@ -27,8 +29,10 @@ class InvoiceLineBase(BaseModel):
             Decimal: lambda v: float(v) if v is not None else None
         }
 
+
 class InvoiceLineCreate(InvoiceLineBase):
     tax_rate: float = Field(..., description="Tax rate as a percentage (e.g., 19.0 for 19%")
+
 
 class InvoiceLine(InvoiceLineBase):
     id: int
@@ -61,6 +65,7 @@ class InvoiceLine(InvoiceLineBase):
         # Default to 19% if no tax rate is specified
         return 19.0
 
+
 class InvoiceLineUpdate(BaseModel):
     description: Optional[str] = None
     quantity: Optional[float] = None
@@ -75,6 +80,7 @@ class InvoiceLineUpdate(BaseModel):
             Decimal: lambda v: float(v) if v is not None else None
         }
 
+
 class PaymentTermSchema(BaseModel):
     id: int
     payment_terms_code: Optional[str] = None
@@ -82,6 +88,7 @@ class PaymentTermSchema(BaseModel):
     discount_percent: Optional[float] = None
     discount_due_date: Optional[date] = None
     payment_due_date: Optional[date] = None
+
 
 class InvoiceBase(BaseModel):
     document_number: str
@@ -106,8 +113,10 @@ class InvoiceBase(BaseModel):
             Decimal: lambda v: float(v) if v is not None else None
         }
 
+
 class InvoiceCreate(InvoiceBase):
     lines: List[InvoiceLineCreate] = []
+
 
 class InvoiceUpdate(BaseModel):
     document_number: Optional[str] = None
@@ -121,6 +130,7 @@ class InvoiceUpdate(BaseModel):
     terms: Optional[str] = None
     payment_terms: Optional[List[Dict[str, Any]]] = None
     lines: Optional[List[Dict[str, Any]]] = None
+
 
 class Invoice(InvoiceBase):
     id: int

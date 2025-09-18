@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
     Table,
     Thead,
@@ -12,23 +12,21 @@ import {
     Flex,
     Icon,
     Button,
-    useDisclosure,
+    IconButton,
     useToast,
     Skeleton,
     Stack,
-    useBreakpointValue,
     Link,
 } from '@chakra-ui/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { FiFileText, FiSearch, FiFilter, FiX, FiDownload, FiEye, FiEdit2, FiTrash2 } from 'react-icons/fi';
+import { FiFileText, FiX, FiDownload, FiEye, FiEdit2, FiTrash2 } from 'react-icons/fi';
 import { Link as RouterLink } from 'react-router-dom';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 
-import { invoiceApi } from '../../services/api';
-import { Invoice, InvoiceStatus } from '../../types/invoice';
-import { InvoiceFilters } from './InvoiceFilters';
-import { useAuth } from '../../contexts/AuthContext';
+import { invoiceApi } from '../../services/invoiceApi';
+import type { Invoice, InvoiceStatus, PaginatedResponse } from '../../types/invoice';
+import InvoiceFilters from './InvoiceFilters';
 
 interface InvoiceListProps {
     limit?: number;
@@ -38,6 +36,15 @@ interface InvoiceListProps {
     status?: InvoiceStatus;
 }
 
+interface InvoiceFiltersState {
+    status?: string;
+    clientId?: string;
+    startDate?: Date | null;
+    endDate?: Date | null;
+    amountMin?: string;
+    amountMax?: string;
+}
+
 const statusColors: Record<InvoiceStatus, string> = {
     draft: 'gray',
     sent: 'blue',
@@ -45,7 +52,7 @@ const statusColors: Record<InvoiceStatus, string> = {
     overdue: 'orange',
     cancelled: 'red',
     refunded: 'purple',
-};
+} as const;
 
 const InvoiceList: React.FC<InvoiceListProps> = ({
     limit = 10,
@@ -56,65 +63,57 @@ const InvoiceList: React.FC<InvoiceListProps> = ({
 }) => {
     const [page, setPage] = useState(1);
     const [searchQuery, setSearchQuery] = useState('');
-    const [filters, setFilters] = useState<{
-        status?: string;
-        clientId?: string;
-        startDate?: Date | null;
-        endDate?: Date | null;
-        amountMin?: string;
-        amountMax?: string;
-    }>({});
+    const [filters, setFilters] = useState<InvoiceFiltersState>({});
 
     const toast = useToast();
-    const { user } = useAuth();
     const queryClient = useQueryClient();
-    const isMobile = useBreakpointValue({ base: true, md: false });
 
-    // Mock clients data - replace with actual API call
-    const clients = [
-        { id: 1, name: 'Client A' },
-        { id: 2, name: 'Client B' },
-        { id: 3, name: 'Client C' },
-    ];
-
-    const statuses: InvoiceStatus[] = ['draft', 'sent', 'paid', 'overdue', 'cancelled', 'refunded'];
-
-    const fetchInvoices = useCallback(async () => {
-        const params: any = {
+    const fetchInvoices = useCallback(async (): Promise<PaginatedResponse<Invoice>> => {
+        const params: Record<string, unknown> = {
             page,
             limit,
             search: searchQuery,
             ...filters,
         };
 
-        // Add clientId and status from props if provided
         if (clientId) params.clientId = clientId;
         if (status) params.status = status;
 
         const response = await invoiceApi.getInvoices(params);
-        return response.data;
+        return response;
     }, [page, limit, searchQuery, filters, clientId, status]);
 
     const {
-        data: invoicesData,
+        data: response,
         isLoading,
         isError,
-        error,
-        refetch,
     } = useQuery({
         queryKey: ['invoices', { page, limit, searchQuery, filters, clientId, status }],
         queryFn: fetchInvoices,
-        keepPreviousData: true,
+        placeholderData: (previousData: PaginatedResponse<Invoice> | undefined) =>
+            previousData ?? {
+                data: [],
+                total: 0,
+                page: 1,
+                limit,
+                totalPages: 0,
+                hasNextPage: false,
+                hasPreviousPage: false,
+                from: 0,
+                to: 0
+            },
     });
+
+    const { data: invoices = [], total = 0 } = response || {};
 
     const handleSearch = (query: string) => {
         setSearchQuery(query);
-        setPage(1); // Reset to first page on new search
+        setPage(1);
     };
 
-    const handleFilterChange = (newFilters: any) => {
+    const handleFilterChange = (newFilters: InvoiceFiltersState) => {
         setFilters(newFilters);
-        setPage(1); // Reset to first page on new filters
+        setPage(1);
     };
 
     const handleResetFilters = () => {
@@ -133,7 +132,7 @@ const InvoiceList: React.FC<InvoiceListProps> = ({
                     duration: 3000,
                     isClosable: true,
                 });
-                queryClient.invalidateQueries(['invoices']);
+                queryClient.invalidateQueries({ queryKey: ['invoices'] });
             } catch (error) {
                 console.error('Error deleting invoice:', error);
                 toast({
@@ -155,8 +154,7 @@ const InvoiceList: React.FC<InvoiceListProps> = ({
         }).format(amount);
     };
 
-    // Show skeleton loading state
-    if (isLoading && !invoicesData) {
+    if (isLoading && !response) {
         return (
             <Stack spacing={4}>
                 {[...Array(5)].map((_, i) => (
@@ -166,7 +164,6 @@ const InvoiceList: React.FC<InvoiceListProps> = ({
         );
     }
 
-    // Show error state
     if (isError) {
         return (
             <Box textAlign="center" py={10}>
@@ -174,15 +171,14 @@ const InvoiceList: React.FC<InvoiceListProps> = ({
                 <Text color="red.500" mb={4}>
                     Une erreur est survenue lors du chargement des factures.
                 </Text>
-                <Button colorScheme="blue" onClick={() => refetch()}>
+                <Button colorScheme="blue" onClick={() => queryClient.invalidateQueries({ queryKey: ['invoices'] })}>
                     Réessayer
                 </Button>
             </Box>
         );
     }
 
-    // Show empty state
-    if (invoicesData?.data.length === 0) {
+    if (invoices.length === 0) {
         return (
             <Box textAlign="center" py={10}>
                 <Icon as={FiFileText} boxSize={10} color="gray.400" mb={4} />
@@ -196,6 +192,9 @@ const InvoiceList: React.FC<InvoiceListProps> = ({
         );
     }
 
+    const startItem = (page - 1) * limit + 1;
+    const endItem = Math.min(page * limit, total);
+
     return (
         <Box>
             {showFilters && (
@@ -203,70 +202,66 @@ const InvoiceList: React.FC<InvoiceListProps> = ({
                     onSearch={handleSearch}
                     onFilterChange={handleFilterChange}
                     onReset={handleResetFilters}
-                    clients={clients}
-                    statuses={statuses}
                     defaultFilters={filters}
+                    clients={[]} // Add your clients data here if needed
+                    statuses={Object.keys(statusColors) as InvoiceStatus[]}
                 />
             )}
 
-            <Box overflowX="auto">
-                <Table variant="simple" size={isMobile ? 'sm' : 'md'}>
+            <Box overflowX="auto" mt={6}>
+                <Table variant="simple">
                     <Thead>
                         <Tr>
                             <Th>N° Facture</Th>
                             <Th>Client</Th>
                             <Th>Date</Th>
                             <Th>Échéance</Th>
-                            <Th isNumeric>Montant</Th>
+                            <Th>Montant</Th>
                             <Th>Statut</Th>
-                            <Th></Th>
+                            <Th>Actions</Th>
                         </Tr>
                     </Thead>
                     <Tbody>
-                        {invoicesData?.data.map((invoice: Invoice) => (
+                        {invoices.map((invoice) => (
                             <Tr key={invoice.id} _hover={{ bg: 'gray.50' }}>
                                 <Td>
                                     <Link as={RouterLink} to={`/invoices/${invoice.id}`} color="blue.500" fontWeight="medium">
-                                        #{invoice.invoiceNumber}
+                                        {invoice.invoiceNumber}
                                     </Link>
                                 </Td>
+                                <Td>{invoice.client?.name || 'N/A'}</Td>
                                 <Td>
-                                    <Text fontWeight="medium">{invoice.client?.name || 'N/A'}</Text>
-                                    <Text fontSize="sm" color="gray.500">
-                                        {invoice.client?.email || ''}
-                                    </Text>
-                                </Td>
-                                <Td>
-                                    {invoice.issueDate
-                                        ? format(new Date(invoice.issueDate), 'dd MMM yyyy', { locale: fr })
+                                    {invoice.issueDate || invoice.createdAt
+                                        ? format(new Date(invoice.issueDate || invoice.createdAt as string | number | Date), 'dd MMM yyyy')
                                         : 'N/A'}
                                 </Td>
                                 <Td>
                                     {invoice.dueDate
-                                        ? format(new Date(invoice.dueDate), 'dd MMM yyyy', { locale: fr })
+                                        ? format(new Date(invoice.dueDate as string | number | Date), 'dd MMM yyyy')
                                         : 'N/A'}
                                 </Td>
-                                <Td isNumeric fontWeight="bold">
-                                    {formatCurrency(invoice.totalAmount)}
-                                </Td>
+                                <Td>{formatCurrency(invoice.totalAmount)}</Td>
                                 <Td>
-                                    <Badge
-                                        colorScheme={statusColors[invoice.status]}
-                                        px={2}
-                                        py={1}
-                                        borderRadius="md"
-                                        textTransform="capitalize"
-                                    >
+                                    <Badge colorScheme={statusColors[invoice.status]}>
                                         {invoice.status}
                                     </Badge>
                                 </Td>
                                 <Td>
-                                    <Flex justifyContent="flex-end" gap={2}>
+                                    <Flex gap={2}>
                                         <IconButton
                                             as={RouterLink}
                                             to={`/invoices/${invoice.id}`}
                                             aria-label="Voir la facture"
                                             icon={<FiEye />}
+                                            size="sm"
+                                            variant="ghost"
+                                        />
+                                        <IconButton
+                                            as="a"
+                                            href={`/api/invoices/${invoice.id}/download`}
+                                            download
+                                            aria-label="Télécharger la facture"
+                                            icon={<FiDownload />}
                                             size="sm"
                                             variant="ghost"
                                         />
@@ -280,29 +275,12 @@ const InvoiceList: React.FC<InvoiceListProps> = ({
                                             colorScheme="blue"
                                         />
                                         <IconButton
-                                            aria-label="Télécharger la facture"
-                                            icon={<FiDownload />}
-                                            size="sm"
-                                            variant="ghost"
-                                            colorScheme="green"
-                                            onClick={() => {
-                                                // Handle download
-                                                toast({
-                                                    title: 'Téléchargement',
-                                                    description: 'Téléchargement de la facture...',
-                                                    status: 'info',
-                                                    duration: 2000,
-                                                    isClosable: true,
-                                                });
-                                            }}
-                                        />
-                                        <IconButton
+                                            onClick={() => handleDelete(invoice.id)}
                                             aria-label="Supprimer la facture"
                                             icon={<FiTrash2 />}
                                             size="sm"
                                             variant="ghost"
                                             colorScheme="red"
-                                            onClick={() => handleDelete(invoice.id)}
                                         />
                                     </Flex>
                                 </Td>
@@ -312,14 +290,14 @@ const InvoiceList: React.FC<InvoiceListProps> = ({
                 </Table>
             </Box>
 
-            {showPagination && invoicesData && invoicesData.total > limit && (
+            {showPagination && total > limit && (
                 <Flex justifyContent="space-between" alignItems="center" mt={6}>
                     <Text color="gray.600" fontSize="sm">
-                        Affichage de {invoicesData.from} à {invoicesData.to} sur {invoicesData.total} factures
+                        Affichage de {startItem} à {endItem} sur {total} factures
                     </Text>
                     <Flex gap={2}>
                         <Button
-                            onClick={() => setPage((p) => Math.max(p - 1, 1))}
+                            onClick={() => setPage((p) => Math.max(1, p - 1))}
                             isDisabled={page === 1}
                             size="sm"
                             variant="outline"
@@ -328,7 +306,7 @@ const InvoiceList: React.FC<InvoiceListProps> = ({
                         </Button>
                         <Button
                             onClick={() => setPage((p) => p + 1)}
-                            isDisabled={!invoicesData.nextPage}
+                            isDisabled={endItem >= total}
                             size="sm"
                             variant="outline"
                         >

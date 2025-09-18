@@ -1,10 +1,11 @@
+import json
 import traceback
 from typing import List, Optional, Union, Dict, Any
 from datetime import date, datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form, Response
-from sqlalchemy.orm import Session, joinedload, selectinload
+from sqlalchemy.orm import Session, joinedload, selectinload, aliased, contains_eager
 from sqlalchemy import func, or_
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 from fastapi.responses import JSONResponse
 
 from src.teif.db.session import get_db
@@ -35,6 +36,13 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+
+class DateTimeEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        return super().default(obj)
+
 class InvoiceResponse(BaseModel):
     """Pydantic model for invoice response."""
     id: int
@@ -47,7 +55,7 @@ class InvoiceResponse(BaseModel):
     document_number: str = Field(..., alias="document_number")
     document_type: str = Field(..., alias="document_type")
     document_type_label: str = Field(..., alias="document_type_label")
-    document_status: str = Field(..., alias="document_status")
+    status: str = Field(..., alias="status") 
     invoice_date: date = Field(..., alias="invoice_date")
     due_date: Optional[date] = Field(None, alias="due_date")
     period_start_date: Optional[date] = Field(None, alias="period_start_date")
@@ -62,7 +70,17 @@ class InvoiceResponse(BaseModel):
     total_without_tax: float = Field(..., alias="total_without_tax")
     tax_base_amount: float = Field(..., alias="tax_base_amount")
     tax_amount: float = Field(..., alias="tax_amount")
-    payment_terms: Optional[str] = Field(None, alias="payment_terms")
+    payment_terms: Optional[List[str]] = Field(None, alias="payment_terms")
+    
+    @validator('payment_terms', pre=True)
+    def parse_payment_terms(cls, v):
+        if v is None:
+            return []
+        if isinstance(v, str):
+            # Split the string by comma and strip whitespace
+            return [term.strip() for term in v.split(',') if term.strip()]
+        return v
+    
     payment_means_code: Optional[str] = Field(None, alias="payment_means_code")
     payment_means_text: Optional[str] = Field(None, alias="payment_means_text")
     notes: Optional[str] = Field(None, alias="notes")
@@ -71,8 +89,13 @@ class InvoiceResponse(BaseModel):
     updated_at: Optional[datetime] = Field(None, alias="updated_at")
     
     class Config:
+        # For Pydantic v2
+        from_attributes = True
+        # For Pydantic v1 compatibility
         orm_mode = True
         allow_population_by_field_name = True
+        alias_generator = lambda s: s  # This will use the field names as-is
+        populate_by_name = True
 
 @router.get("/", response_model=List[InvoiceSchema])
 async def list_invoices(
@@ -329,7 +352,7 @@ async def upload_invoice_pdf(
             detail=f"Error processing invoice: {str(e)}"
         )
 
-@router.get("/export/", response_model=List[InvoiceResponse])
+@router.get("/export/")
 async def export_invoices(
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
@@ -379,13 +402,31 @@ async def export_invoices(
             )
             total = service.invoice_repo.count()
         
+        # Convert invoices to dict and handle datetime serialization
+        def convert_datetime(obj):
+            if isinstance(obj, (datetime, date)):
+                return obj.isoformat()
+            raise TypeError(f"Type {type(obj)} not serializable")
+        
+        # Convert each invoice to a dictionary with proper datetime handling
+        invoice_dicts = []
+        for invoice in invoices:
+            invoice_dict = InvoiceResponse.from_orm(invoice).dict()
+            # Convert datetime fields to ISO format strings
+            for key, value in invoice_dict.items():
+                if isinstance(value, (datetime, date)):
+                    invoice_dict[key] = value.isoformat()
+            invoice_dicts.append(invoice_dict)
+        
         # Create response with headers
         response = JSONResponse(
-            content=[InvoiceResponse.from_orm(invoice).dict() for invoice in invoices]
+            content=invoice_dicts,
+            headers={
+                "X-Total-Count": str(total),
+                "X-Page-Size": str(limit),
+                "X-Page": str(skip // limit + 1 if limit > 0 else 1)
+            }
         )
-        response.headers["X-Total-Count"] = str(total)
-        response.headers["X-Page-Size"] = str(limit)
-        response.headers["X-Page"] = str(skip // limit + 1 if limit > 0 else 1)
         
         return response
         
@@ -417,13 +458,32 @@ async def generate_invoice_xml(
         Response: Le contenu XML de la facture avec l'en-tête Content-Type approprié
     """
     # Récupérer la facture avec toutes les relations nécessaires
+    from src.teif.db.models.company import Company, CompanyContact
+    from src.teif.db.models.invoice import InvoiceLine
+
     invoice = db.query(InvoiceModel)\
         .options(
-            joinedload(InvoiceModel.supplier).joinedload(Company.contacts).joinedload(CompanyContact.communications),
-            joinedload(InvoiceModel.customer).joinedload(Company.contacts).joinedload(CompanyContact.communications),
-            joinedload(InvoiceModel.lines).joinedload(InvoiceLine.taxes),
+            # Charger le fournisseur avec ses contacts et communications
+            joinedload(InvoiceModel.supplier)\
+                .selectinload(Company.contacts)\
+                .selectinload(CompanyContact.communications),
+                
+            # Charger le client avec ses contacts et communications
+            joinedload(InvoiceModel.customer)\
+                .selectinload(Company.contacts)\
+                .selectinload(CompanyContact.communications),
+                
+            # Charger les lignes de facture avec leurs taxes
+            selectinload(InvoiceModel.lines)\
+                .selectinload(InvoiceLine.taxes),
+                
+            # Charger les taxes globales de la facture
             joinedload(InvoiceModel.taxes),
-            joinedload(InvoiceModel.payment_terms),
+            
+            # Charger les conditions de paiement (payment_terms_list est la relation, pas payment_terms)
+            joinedload(InvoiceModel.payment_terms_list),
+            
+            # Charger les conditions spéciales
             joinedload(InvoiceModel.special_conditions)
         )\
         .filter(InvoiceModel.id == invoice_id)\

@@ -1,6 +1,7 @@
-import axios, { AxiosResponse } from 'axios';
-import { Invoice, InvoiceFilters, InvoiceStats, PaginatedResponse, Invoice as InvoiceType } from '../types/invoice';
-import { api } from './api';
+import type { AxiosResponse } from 'axios';
+import type { Invoice, InvoiceFilters, InvoiceStats, PaginatedResponse } from '../types/invoice';
+import api from './api';
+import axios from 'axios';
 
 const INVOICE_API_BASE = '/invoices';
 
@@ -18,12 +19,17 @@ interface GetInvoicesParams {
     sortOrder?: 'asc' | 'desc';
 }
 
+interface ApiResponse<T> {
+    data: T;
+    message?: string;
+}
+
 export const invoiceApi = {
     /**
      * Get paginated list of invoices with optional filters
      */
     getInvoices: async (params: GetInvoicesParams = {}): Promise<PaginatedResponse<Invoice>> => {
-        const queryParams: Record<string, any> = {
+        const queryParams: Record<string, unknown> = {
             page: params.page || 1,
             limit: params.limit || 10,
         };
@@ -39,15 +45,17 @@ export const invoiceApi = {
         if (params.sortBy) queryParams.sortBy = params.sortBy;
         if (params.sortOrder) queryParams.sortOrder = params.sortOrder;
 
-        const response = await api.get<PaginatedResponse<Invoice>>(INVOICE_API_BASE, { params: queryParams });
-        return response.data;
+        const response = await api.get<ApiResponse<PaginatedResponse<Invoice>>>(INVOICE_API_BASE, { 
+            params: queryParams 
+        });
+        return response.data.data;
     },
 
     /**
      * Get a single invoice by ID
      */
     getInvoiceById: async (id: number): Promise<Invoice> => {
-        const response = await api.get<{ data: Invoice }>(`${INVOICE_API_BASE}/${id}`);
+        const response = await api.get<ApiResponse<Invoice>>(`${INVOICE_API_BASE}/${id}`);
         return response.data.data;
     },
 
@@ -55,7 +63,7 @@ export const invoiceApi = {
      * Create a new invoice
      */
     createInvoice: async (invoiceData: Partial<Invoice>): Promise<Invoice> => {
-        const response = await api.post<{ data: Invoice }>(INVOICE_API_BASE, invoiceData);
+        const response = await api.post<ApiResponse<Invoice>>(INVOICE_API_BASE, invoiceData);
         return response.data.data;
     },
 
@@ -63,7 +71,10 @@ export const invoiceApi = {
      * Update an existing invoice
      */
     updateInvoice: async (id: number, invoiceData: Partial<Invoice>): Promise<Invoice> => {
-        const response = await api.put<{ data: Invoice }>(`${INVOICE_API_BASE}/${id}`, invoiceData);
+        const response = await api.put<ApiResponse<Invoice>>(
+            `${INVOICE_API_BASE}/${id}`, 
+            invoiceData
+        );
         return response.data.data;
     },
 
@@ -78,15 +89,23 @@ export const invoiceApi = {
      * Send an invoice to the client
      */
     sendInvoice: async (id: number): Promise<{ message: string }> => {
-        const response = await api.post<{ message: string }>(`${INVOICE_API_BASE}/${id}/send`);
-        return response.data;
+        const response = await api.post<ApiResponse<{ message: string }>>(
+            `${INVOICE_API_BASE}/${id}/send`
+        );
+        return response.data.data;
     },
 
     /**
      * Mark an invoice as paid
      */
-    markAsPaid: async (id: number, paymentData: { amount: number; paymentDate: string; paymentMethod: string }): Promise<Invoice> => {
-        const response = await api.post<{ data: Invoice }>(`${INVOICE_API_BASE}/${id}/pay`, paymentData);
+    markAsPaid: async (
+        id: number, 
+        paymentData: { amount: number; paymentDate: string; paymentMethod: string }
+    ): Promise<Invoice> => {
+        const response = await api.post<ApiResponse<Invoice>>(
+            `${INVOICE_API_BASE}/${id}/pay`, 
+            paymentData
+        );
         return response.data.data;
     },
 
@@ -104,7 +123,7 @@ export const invoiceApi = {
      * Get invoice statistics
      */
     getStats: async (): Promise<InvoiceStats> => {
-        const response = await api.get<{ data: InvoiceStats }>(`${INVOICE_API_BASE}/stats`);
+        const response = await api.get<ApiResponse<InvoiceStats>>(`${INVOICE_API_BASE}/stats`);
         return response.data.data;
     },
 
@@ -112,7 +131,7 @@ export const invoiceApi = {
      * Get next available invoice number
      */
     getNextInvoiceNumber: async (): Promise<{ nextNumber: string }> => {
-        const response = await api.get<{ data: { nextNumber: string } }>(
+        const response = await api.get<ApiResponse<{ nextNumber: string }>>(
             `${INVOICE_API_BASE}/next-number`
         );
         return response.data.data;
@@ -122,7 +141,7 @@ export const invoiceApi = {
      * Generate TEIF XML for an invoice
      */
     generateTeif: async (id: number): Promise<{ xml: string }> => {
-        const response = await api.get<{ data: { xml: string } }>(
+        const response = await api.get<ApiResponse<{ xml: string }>>(
             `${INVOICE_API_BASE}/${id}/generate-teif`
         );
         return response.data.data;
@@ -135,7 +154,7 @@ export const invoiceApi = {
         const formData = new FormData();
         formData.append('file', file);
 
-        const response = await api.post<{ data: { invoice: Invoice; message: string } }>(
+        const response = await api.post<ApiResponse<{ invoice: Invoice; message: string }>>(
             `${INVOICE_API_BASE}/upload-pdf`,
             formData,
             {
@@ -152,7 +171,7 @@ export const invoiceApi = {
      * Export invoices to Excel
      */
     exportToExcel: async (filters: Partial<InvoiceFilters> = {}): Promise<Blob> => {
-        const queryParams: Record<string, any> = {};
+        const queryParams: Record<string, unknown> = {};
 
         // Add filters if provided
         if (filters.status) queryParams.status = filters.status;
@@ -183,7 +202,16 @@ export const invoiceApi = {
         invoiceId: number;
         invoiceNumber: string;
     }>> => {
-        const response = await api.get<{ data: any[] }>(
+        const response = await api.get<ApiResponse<Array<{
+            id: number;
+            action: string;
+            description: string;
+            date: string;
+            userId: number;
+            userName: string;
+            invoiceId: number;
+            invoiceNumber: string;
+        }>>>(
             `${INVOICE_API_BASE}/recent-activity`,
             { params: { limit } }
         );
@@ -193,13 +221,18 @@ export const invoiceApi = {
     /**
      * Validate invoice data before submission
      */
-    validateInvoice: async (invoiceData: Partial<Invoice>): Promise<{ valid: boolean; errors: Record<string, string[]> }> => {
+    validateInvoice: async (
+        invoiceData: Partial<Invoice>
+    ): Promise<{ valid: boolean; errors: Record<string, string[]> }> => {
         try {
             await api.post(`${INVOICE_API_BASE}/validate`, invoiceData);
             return { valid: true, errors: {} };
         } catch (error) {
             if (axios.isAxiosError(error) && error.response?.status === 422) {
-                return { valid: false, errors: error.response.data.errors };
+                return { 
+                    valid: false, 
+                    errors: error.response.data.errors || {} 
+                };
             }
             throw error;
         }
@@ -209,7 +242,9 @@ export const invoiceApi = {
      * Duplicate an existing invoice
      */
     duplicateInvoice: async (id: number): Promise<Invoice> => {
-        const response = await api.post<{ data: Invoice }>(`${INVOICE_API_BASE}/${id}/duplicate`);
+        const response = await api.post<ApiResponse<Invoice>>(
+            `${INVOICE_API_BASE}/${id}/duplicate`
+        );
         return response.data.data;
     },
 };

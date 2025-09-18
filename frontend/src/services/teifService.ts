@@ -1,4 +1,4 @@
-import { api } from './api';
+import api from './api';
 import { saveAs } from 'file-saver';
 import { format } from 'date-fns';
 
@@ -11,7 +11,7 @@ export const teifService = {
      * @returns The generated XML as a string
      */
     generateTeif: async (invoiceId: number): Promise<string> => {
-        const response = await api.get(`${TEIF_API_BASE}/invoices/${invoiceId}/generate`, {
+        const response = await api.get<string>(`${TEIF_API_BASE}/invoices/${invoiceId}/generate`, {
             responseType: 'text',
             headers: {
                 'Accept': 'application/xml',
@@ -26,12 +26,9 @@ export const teifService = {
      * @param fileName - Optional custom file name
      */
     downloadTeif: async (invoiceId: number, fileName?: string): Promise<void> => {
-        const xml = await this.generateTeif(invoiceId);
+        const xml = await teifService.generateTeif(invoiceId);
         const blob = new Blob([xml], { type: 'application/xml' });
-
-        // Generate file name if not provided
-        const defaultName = `facture_${format(new Date(), 'yyyyMMdd')}_${invoiceId}.xml`;
-        saveAs(blob, fileName || defaultName);
+        saveAs(blob, fileName || `invoice_${invoiceId}_${format(new Date(), 'yyyyMMdd')}.xml`);
     },
 
     /**
@@ -67,7 +64,7 @@ export const teifService = {
      * @returns The TEIF XML schema as a string
      */
     getTeifSchema: async (): Promise<string> => {
-        const response = await api.get(`${TEIF_API_BASE}/schema`, {
+        const response = await api.get<string>(`${TEIF_API_BASE}/schema`, {
             responseType: 'text',
             headers: {
                 'Accept': 'application/xml',
@@ -141,7 +138,7 @@ export const teifService = {
      * @returns A blob URL for the XML preview
      */
     previewTeif: async (invoiceId: number): Promise<string> => {
-        const xml = await this.generateTeif(invoiceId);
+        const xml = await teifService.generateTeif(invoiceId);
         const blob = new Blob([xml], { type: 'application/xml' });
         return URL.createObjectURL(blob);
     },

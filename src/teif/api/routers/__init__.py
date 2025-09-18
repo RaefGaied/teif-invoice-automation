@@ -1,9 +1,6 @@
-"""
-API Routers Package
+# src/teif/api/routers/__init__.py
+from .dashboard import router as dashboard_router
+from .invoices import router as invoices_router
+from .companies import router as companies_router
 
-This package contains all the route definitions for the TEIF API.
-Each router is responsible for a specific domain (e.g., companies, invoices).
-"""
-
-# Import routers here to make them available when importing from .
-# from . import companies, invoices, etc.
+__all__ = ["dashboard_router", "invoices_router", "companies_router"]

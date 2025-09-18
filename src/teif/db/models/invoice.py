@@ -20,14 +20,11 @@ if TYPE_CHECKING:
     from .signature import InvoiceSignature, GeneratedXmlFile
 
 class InvoiceStatus(str, Enum):
-    """Invoice status enumeration focused on processing and generation lifecycle."""
-    DRAFT = "draft"            # Initial draft state
-    UPLOADING = "uploading"    # Invoice is being uploaded
-    UPLOADED = "uploaded"      # Successfully uploaded to the system
+    """Invoice status enumeration."""
     PROCESSING = "processing"  # Being processed (validation, transformation)
     GENERATED = "generated"    # TEIF XML successfully generated
-    ERROR = "error"           # Error during processing/generation
-    ARCHIVED = "archived"     # Processed and archived
+    ERROR = "error"            # Error during processing/generation
+    ARCHIVED = "archived"      # Processed and archived
     
 class InvoiceType(str, Enum):
     """Invoice type enumeration based on TEIF 1.8.8."""
@@ -111,11 +108,17 @@ class Invoice(BaseModel):
         comment="Document type label (I-12)"
     )
     
-    document_status: Mapped[InvoiceStatus] = mapped_column(
+    """document_status: Mapped[InvoiceStatus] = mapped_column(
         String(20),
         default=InvoiceStatus.DRAFT,
         comment="Current status of the invoice"
-    )
+    )"""
+    # In your SQLAlchemy model file
+    status: Mapped[InvoiceStatus] = mapped_column(
+        String(20),
+        default=InvoiceStatus.PROCESSING,  # Changed from DRAFT to PROCESSING
+        comment="Current status of the invoice"
+)
     
     # ===== Date Information =====
     invoice_date: Mapped[date] = mapped_column(

@@ -10,6 +10,7 @@ from ..repositories.company_repository import CompanyRepository
 from ..schemas.invoice import InvoiceCreate, InvoiceUpdate, InvoiceLineCreate
 from .base import BaseService
 
+
 class InvoiceService(BaseService[Invoice, InvoiceCreate, InvoiceUpdate]):
     """Service for handling invoice business logic."""
     

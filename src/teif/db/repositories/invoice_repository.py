@@ -17,108 +17,23 @@ class InvoiceRepository(BaseRepository[Invoice, InvoiceCreate, InvoiceUpdate]):
         super().__init__(Invoice, db)
     
     def get_with_details(self, id: int) -> Optional[Invoice]:
-        """Get an invoice by ID with all related data loaded."""
-        from sqlalchemy.orm import load_only, contains_eager
-        
-        # Import models to reference their attributes
-        from ..models.invoice import InvoiceLine, InvoiceReference, AdditionalDocument, SpecialCondition
-        from ..models.tax import LineTax, InvoiceTax
-        from ..models.payment import PaymentTerm, PaymentMean
-        from ..models.company import Company
-        
-        # Define column sets using class attributes
-        company_columns = [
-            Company.id, Company.identifier, Company.name, Company.vat_number, 
-            Company.tax_id, Company.commercial_register, Company.address_street,
-            Company.address_city, Company.address_postal_code, 
-            Company.address_country_code, Company.phone, Company.email,
-            Company.fax, Company.website, Company.created_at
-        ]
-        
-        line_columns = [
-            InvoiceLine.id, InvoiceLine.invoice_id, InvoiceLine.line_number,
-            InvoiceLine.parent_line_id, InvoiceLine.item_identifier,
-            InvoiceLine.item_code, InvoiceLine.description, InvoiceLine.quantity,
-            InvoiceLine.unit, InvoiceLine.unit_price, InvoiceLine.line_total_ht,
-            InvoiceLine.discount_amount, InvoiceLine.discount_reason,
-            InvoiceLine.currency, InvoiceLine.currency_code_list,
-            InvoiceLine.line_date, InvoiceLine.created_at
-        ]
-        
-        line_tax_columns = [
-            LineTax.id, LineTax.line_id, LineTax.tax_code, 
-            LineTax.tax_type, LineTax.tax_category, LineTax.tax_rate, 
-            LineTax.taxable_amount, LineTax.tax_amount,
-            LineTax.currency_code_list, LineTax.created_at
-        ]
-        
-        invoice_tax_columns = [
-            InvoiceTax.id, InvoiceTax.invoice_id, InvoiceTax.tax_code,
-            InvoiceTax.tax_type, InvoiceTax.tax_category, InvoiceTax.tax_rate,
-            InvoiceTax.taxable_amount, InvoiceTax.tax_amount,
-            InvoiceTax.currency_code_list, InvoiceTax.created_at
-        ]
-        
-        # First, load the invoice with basic relationships
-        query = self.db.query(Invoice).options(
-            joinedload(Invoice.lines, innerjoin=False).load_only(*line_columns),
-            joinedload(Invoice.taxes, innerjoin=False).load_only(*invoice_tax_columns),
-            joinedload(Invoice.references, innerjoin=False).load_only(
-                InvoiceReference.id, InvoiceReference.invoice_id,
-                InvoiceReference.reference_type, InvoiceReference.reference_value,
-                InvoiceReference.description, InvoiceReference.created_at
-            ),
-            joinedload(Invoice.additional_documents, innerjoin=False).load_only(
-                AdditionalDocument.id, AdditionalDocument.invoice_id,
-                AdditionalDocument.document_id, AdditionalDocument.document_type,
-                AdditionalDocument.document_name, AdditionalDocument.document_date,
-                AdditionalDocument.description, AdditionalDocument.file_path,
-                AdditionalDocument.created_at
-            ),
-            joinedload(Invoice.special_conditions, innerjoin=False).load_only(
-                SpecialCondition.id, SpecialCondition.invoice_id,
-                SpecialCondition.condition_text, SpecialCondition.language_code,
-                SpecialCondition.sequence_number, SpecialCondition.created_at
-            ),
-            joinedload(Invoice.payment_terms, innerjoin=False).load_only(
-                PaymentTerm.id, PaymentTerm.invoice_id,
-                PaymentTerm.payment_terms_code, PaymentTerm.description,
-                PaymentTerm.discount_percent, PaymentTerm.discount_due_date,
-                PaymentTerm.payment_due_date, PaymentTerm.created_at
-            ),
-            joinedload(Invoice.payment_means, innerjoin=False).load_only(
-                PaymentMean.id, PaymentMean.invoice_id,
-                PaymentMean.payment_means_code, PaymentMean.payment_id,
-                PaymentMean.due_date, PaymentMean.iban,
-                PaymentMean.account_holder, PaymentMean.financial_institution,
-                PaymentMean.branch_code, PaymentMean.created_at
-            ),
-            joinedload(Invoice.supplier, innerjoin=False).load_only(*company_columns),
-            joinedload(Invoice.customer, innerjoin=False).load_only(*company_columns)
-        ).filter(Invoice.id == id)
-        
-        # Then load the line taxes in a separate query to avoid the relationship issue
-        invoice = query.first()
-        if invoice and invoice.lines:
-            # Load taxes for all lines in one query
-            line_ids = [line.id for line in invoice.lines]
-            if line_ids:
-                line_taxes = self.db.query(LineTax)\
-                    .with_entities(*line_tax_columns)\
-                    .filter(LineTax.line_id.in_(line_ids))\
-                    .all()
-                
-                # Assign taxes to their respective lines
-                tax_map = {}
-                for tax in line_taxes:
-                    if tax.line_id not in tax_map:
-                        tax_map[tax.line_id] = []
-                    tax_map[tax.line_id].append(tax)
-                
-                for line in invoice.lines:
-                    line.taxes = tax_map.get(line.id, [])
-        
-        return invoice
+        """Get an invoice by ID with all related data."""
+        return self.db.query(Invoice).options(
+            joinedload(Invoice.supplier),
+            joinedload(Invoice.customer),
+            joinedload(Invoice.delivery_party),
+            joinedload(Invoice.lines).joinedload(InvoiceLine.taxes),
+            joinedload(Invoice.taxes),
+            joinedload(Invoice.payment_terms),
+            joinedload(Invoice.payment_means),
+            joinedload(Invoice.dates),
+            joinedload(Invoice.references),
+            joinedload(Invoice.monetary_amounts),
+            joinedload(Invoice.special_conditions),
+            joinedload(Invoice.additional_documents),
+            joinedload(Invoice.signatures),
+            joinedload(Invoice.generated_files)
+        ).filter(Invoice.id == id).first()
     
     def get_by_document_number(self, document_number: str) -> Optional[Invoice]:
         """Get an invoice by its document number."""
@@ -526,6 +441,35 @@ class InvoiceRepository(BaseRepository[Invoice, InvoiceCreate, InvoiceUpdate]):
                 'outstanding': float(outstanding_as_customer)
             }
         }
+    
+    def count(
+        self,
+        status: Optional[str] = None,
+        company_id: Optional[int] = None
+    ) -> int:
+        """Count invoices with optional filtering by status and company.
+        
+        Args:
+            status: Optional status to filter by
+            company_id: Optional company ID to filter by (as supplier or customer)
+            
+        Returns:
+            int: Number of invoices matching the criteria
+        """
+        query = self.db.query(func.count(Invoice.id))
+        
+        # Apply status filter if provided
+        if status is not None:
+            query = query.filter(Invoice.status == status)
+            
+        # Apply company filter if provided (matches either supplier or customer)
+        if company_id is not None:
+            query = query.filter(
+                (Invoice.supplier_id == company_id) | 
+                (Invoice.customer_id == company_id)
+            )
+            
+        return query.scalar()
 
     def get_multi(
         self, 
@@ -544,7 +488,7 @@ class InvoiceRepository(BaseRepository[Invoice, InvoiceCreate, InvoiceUpdate]):
             company_id: Optional company ID to filter by (as supplier or customer)
             
         Returns:
-            List of Invoice objects
+            List[Invoice]: List of filtered and paginated invoices
         """
         query = self.db.query(Invoice)
         
@@ -559,7 +503,13 @@ class InvoiceRepository(BaseRepository[Invoice, InvoiceCreate, InvoiceUpdate]):
                 (Invoice.customer_id == company_id)
             )
             
-        # Order by most recent first
-        return query.order_by(
-            Invoice.invoice_date.desc()
-        ).offset(skip).limit(limit).all()
+        # Ensure we have a default ordering
+        query = query.order_by(Invoice.invoice_date.desc())
+        
+        # Apply pagination
+        if limit:
+            query = query.limit(limit)
+        if skip:
+            query = query.offset(skip)
+        
+        return query.all()
