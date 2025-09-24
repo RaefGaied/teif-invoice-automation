@@ -1,4 +1,4 @@
-import { Badge, Tooltip, Text, useColorModeValue } from '@chakra-ui/react';
+import { Badge, Tooltip, Text, useColorModeValue, Box } from '@chakra-ui/react';
 import { useTranslation } from 'react-i18next';
 
 type TeifStatus = 'pending' | 'generating' | 'generated' | 'signed' | 'error';

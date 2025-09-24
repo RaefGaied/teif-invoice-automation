@@ -97,34 +97,118 @@ class InvoiceResponse(BaseModel):
         alias_generator = lambda s: s  # This will use the field names as-is
         populate_by_name = True
 
-@router.get("/", response_model=List[InvoiceSchema])
+@router.get("/", response_model=Dict[str, Any])
 async def list_invoices(
     skip: int = 0,
-    limit: int = 100,
+    limit: int = 10,  
     status: Optional[InvoiceStatus] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
     company_id: Optional[int] = None,
-    db: Session = Depends(get_db)
+    page: int = 1,  
+    search_query: Optional[str] = None,  
+    db: Session = Depends(get_db),
+    response: Response = None
 ):
     """
     List all invoices with optional filtering and pagination.
     """
-    service = InvoiceService(db)
+    from sqlalchemy.orm import selectinload
+    from sqlalchemy import or_, func
     
+    # Calculate skip from page if provided
+    if page > 1:
+        skip = (page - 1) * limit
+    
+    # Start building the query
+    query = db.query(InvoiceModel).options(
+        selectinload(InvoiceModel.payment_terms_list)
+    ).order_by(InvoiceModel.invoice_date.desc())
+    
+    # Apply filters
+    if status:
+        query = query.filter(InvoiceModel.status == status)
+        
+    if company_id:
+        query = query.filter(
+            or_(
+                InvoiceModel.supplier_id == company_id,
+                InvoiceModel.customer_id == company_id
+            )
+        )
+        
     if start_date or end_date:
-        # If date range is provided, use the date range query
-        return service.get_invoices_by_date_range(
-            start_date=start_date or date.min,
-            end_date=end_date or date.max,
-            company_id=company_id,
-            status=status,
-            skip=skip,
-            limit=limit
+        if start_date:
+            query = query.filter(InvoiceModel.invoice_date >= start_date)
+        if end_date:
+            query = query.filter(InvoiceModel.invoice_date <= end_date)
+    
+    # Apply search query if provided
+    if search_query:
+        query = query.filter(
+            or_(
+                InvoiceModel.document_number.ilike(f"%{search_query}%"),
+                InvoiceModel.notes.ilike(f"%{search_query}%")
+            )
         )
     
-    # Otherwise, use the basic query
-    return service.get_multi(skip=skip, limit=limit, status=status, company_id=company_id)
+    # Get total count for pagination
+    total = query.count()
+    
+    # Apply pagination
+    invoices = query.offset(skip).limit(limit).all()
+    
+    # Calculate pagination metadata
+    total_pages = (total + limit - 1) // limit if limit > 0 else 1
+    has_next = (skip + limit) < total
+    has_prev = page > 1
+    
+    # Convert to response models
+    result = []
+    for inv in invoices:
+        inv_dict = {}
+        for column in inv.__table__.columns:
+            value = getattr(inv, column.name)
+            if isinstance(value, (datetime, date)):
+                value = value.isoformat()
+            inv_dict[column.name] = value
+        
+        # Handle payment_terms
+        payment_terms = []
+        if hasattr(inv, 'payment_terms_list') and inv.payment_terms_list:
+            payment_terms = [
+                term.description for term in inv.payment_terms_list 
+                if term and term.description
+            ]
+        elif hasattr(inv, 'payment_terms') and inv.payment_terms:
+            payment_terms = [term.strip() for term in inv.payment_terms.split(',') if term.strip()]
+        
+        inv_dict['payment_terms'] = payment_terms
+        result.append(InvoiceResponse(**inv_dict).dict(by_alias=True))
+    
+    # Return structured response
+    response_data = {
+        "data": result,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "totalPages": total_pages,
+        "hasNextPage": has_next,
+        "hasPreviousPage": has_prev,
+        "from": skip + 1 if total > 0 else 0,
+        "to": min(skip + limit, total) if total > 0 else 0
+    }
+    
+    # Set response headers for backward compatibility
+    if response:
+        response.headers["X-Total-Count"] = str(total)
+        response.headers["X-Page"] = str(page)
+        response.headers["X-Per-Page"] = str(limit)
+        response.headers["X-Total-Pages"] = str(total_pages)
+        response.headers["X-Has-Next"] = str(has_next).lower()
+        response.headers["X-Has-Prev"] = str(has_prev).lower()
+    
+    return response_data
 
 @router.post("/", response_model=InvoiceSchema, status_code=status.HTTP_201_CREATED)
 async def create_invoice(

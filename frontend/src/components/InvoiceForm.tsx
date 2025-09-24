@@ -30,39 +30,57 @@ import {
 } from "@chakra-ui/react";
 
 import { AddIcon, DeleteIcon } from '@chakra-ui/icons';
-import { useForm, useFieldArray, Controller } from 'react-hook-form';
+import { useForm, useFieldArray } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
 import { invoiceApi, companyApi } from '../services/api';
 
+// Définir le type pour les éléments de la facture
+interface InvoiceItem {
+    description: string;
+    quantity: number;
+    unit_price: number;
+    tax_rate: number;
+}
+
+// Définir le type pour les données du formulaire
+type InvoiceFormData = {
+    invoice_number: string;
+    issue_date: string;
+    due_date: string;
+    company_id: number;
+    items: InvoiceItem[];
+    notes?: string;
+};
+
 // Validation schema
 const invoiceSchema = yup.object().shape({
-    invoice_number: yup.string().required('Invoice number is required'),
-    issue_date: yup.string().required('Issue date is required'),
-    due_date: yup.string().required('Due date is required'),
-    company_id: yup.number().required('Company is required'),
+    invoice_number: yup.string().required('Le numéro de facture est requis'),
+    issue_date: yup.string().required('La date d\'émission est requise'),
+    due_date: yup.string().required('La date d\'échéance est requise'),
+    company_id: yup.number().required('La société est requise'),
     items: yup.array().of(
         yup.object().shape({
-            description: yup.string().required('Description is required'),
+            description: yup.string().required('La description est requise'),
             quantity: yup
                 .number()
-                .typeError('Quantity must be a number')
-                .positive('Quantity must be positive')
-                .required('Quantity is required'),
+                .typeError('La quantité doit être un nombre')
+                .positive('La quantité doit être positive')
+                .required('La quantité est requise'),
             unit_price: yup
                 .number()
-                .typeError('Unit price must be a number')
-                .positive('Unit price must be positive')
-                .required('Unit price is required'),
+                .typeError('Le prix unitaire doit être un nombre')
+                .positive('Le prix unitaire doit être positif')
+                .required('Le prix unitaire est requis'),
             tax_rate: yup
                 .number()
-                .typeError('Tax rate must be a number')
-                .min(0, 'Tax rate cannot be negative')
-                .max(100, 'Tax rate cannot exceed 100%')
-                .required('Tax rate is required'),
+                .typeError('Le taux de TVA doit être un nombre')
+                .min(0, 'Le taux de TVA ne peut pas être négatif')
+                .max(100, 'Le taux de TVA ne peut pas dépasser 100%')
+                .required('Le taux de TVA est requis'),
         })
-    ),
-    notes: yup.string(),
+    ).min(1, 'Au moins un article est requis'),
+    notes: yup.string().optional(),
 });
 
 interface InvoiceFormProps {
@@ -76,19 +94,6 @@ interface Company {
     name: string;
     // Add other company fields as needed
 }
-
-type InvoiceFormData = {
-    invoice_number: string;
-    issue_date: string;
-    due_date: string;
-    company_id: number;
-    items: Array<{
-        description: string;
-        quantity: number;
-        unit_price: number;
-        tax_rate: number;
-    }>;
-};
 
 const InvoiceForm: React.FC<InvoiceFormProps> = ({
     onSuccess,
@@ -107,7 +112,7 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({
         control,
         formState: { errors },
         setValue,
-        reset,
+        reset: resetForm,
         watch,
     } = useForm<InvoiceFormData>({
         resolver: yupResolver(invoiceSchema),
@@ -115,13 +120,13 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({
             invoice_number: '',
             issue_date: new Date().toISOString().split('T')[0],
             due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-            company_id: '',
+            company_id: undefined,
             items: [
                 {
                     description: '',
                     quantity: 1,
                     unit_price: 0,
-                    tax_rate: 19, // Default tax rate
+                    tax_rate: 19,
                 },
             ],
             notes: '',
@@ -171,37 +176,46 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({
         fetchCompanies();
     }, []);
 
-    const onSubmit = async (data: any) => {
-        setIsSubmitting(true);
+    const onSubmit = async (data: InvoiceFormData) => {
         try {
+            const formData = {
+                ...data,
+                // S'assurer que company_id est un nombre
+                company_id: Number(data.company_id),
+                // Convertir les champs numériques si nécessaire
+                items: data.items.map(item => ({
+                    ...item,
+                    quantity: Number(item.quantity),
+                    unit_price: Number(item.unit_price),
+                    tax_rate: Number(item.tax_rate),
+                })),
+            };
+
             if (isEditing && initialData?.id) {
-                await invoiceApi.updateInvoice(initialData.id, data);
+                await invoiceApi.updateInvoice(initialData.id, formData);
                 toast({
-                    title: 'Success',
-                    description: 'Invoice updated successfully',
+                    title: 'Facture mise à jour',
                     status: 'success',
-                    duration: 5000,
+                    duration: 3000,
                     isClosable: true,
                 });
             } else {
-                await invoiceApi.createInvoice(data);
+                await invoiceApi.createInvoice(formData);
                 toast({
-                    title: 'Success',
-                    description: 'Invoice created successfully',
+                    title: 'Facture créée',
                     status: 'success',
-                    duration: 5000,
+                    duration: 3000,
                     isClosable: true,
                 });
+                resetForm();
             }
 
-            if (onSuccess) {
-                onSuccess();
-            }
-        } catch (error: any) {
+            onSuccess?.();
+        } catch (error) {
             console.error('Error saving invoice:', error);
             toast({
-                title: 'Error',
-                description: error.response?.data?.message || 'Failed to save invoice',
+                title: 'Erreur',
+                description: 'Une erreur est survenue lors de la sauvegarde de la facture',
                 status: 'error',
                 duration: 5000,
                 isClosable: true,

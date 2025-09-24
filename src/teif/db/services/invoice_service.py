@@ -20,9 +20,56 @@ class InvoiceService(BaseService[Invoice, InvoiceCreate, InvoiceUpdate]):
         self.company_repo = CompanyRepository(db)
         super().__init__(self.invoice_repo)
     
-    def get_invoice_with_details(self, invoice_id: int) -> Optional[Invoice]:
+    def get_invoice_with_details(self, invoice_id: int) -> Optional[Dict[str, Any]]:
         """Get an invoice with all related data."""
-        return self.invoice_repo.get_with_details(invoice_id)
+        invoice = self.invoice_repo.get_with_details(invoice_id)
+        if not invoice:
+            return None
+            
+        # Convert SQLAlchemy model to dict
+        invoice_dict = {}
+        for column in invoice.__table__.columns:
+            value = getattr(invoice, column.name)
+            # Handle datetime serialization
+            if isinstance(value, (datetime, date)):
+                value = value.isoformat()
+            invoice_dict[column.name] = value
+        
+        # Handle payment_terms as a list of strings
+        payment_terms = []
+        if hasattr(invoice, 'payment_terms_list') and invoice.payment_terms_list:
+            # If we have payment terms objects, extract their descriptions
+            payment_terms = [
+                term.description for term in invoice.payment_terms_list 
+                if term and term.description
+            ]
+        elif 'payment_terms' in invoice_dict and invoice_dict['payment_terms']:
+            # If payment_terms is a string, split it by comma
+            payment_terms = [term.strip() for term in invoice_dict['payment_terms'].split(',') if term.strip()]
+        
+        invoice_dict['payment_terms'] = payment_terms
+        
+        # Handle relationships
+        if hasattr(invoice, 'lines'):
+            invoice_dict['lines'] = [
+                {
+                    'id': line.id,
+                    'line_number': line.line_number,
+                    'description': line.description,
+                    'quantity': float(line.quantity) if line.quantity is not None else 0,
+                    'unit': line.unit,
+                    'unit_price': float(line.unit_price) if line.unit_price is not None else 0,
+                    'line_total_ht': float(line.line_total_ht) if line.line_total_ht is not None else 0,
+                    'discount_amount': float(line.discount_amount) if line.discount_amount is not None else 0,
+                    'discount_percent': float(line.discount_percent) if line.discount_percent is not None else 0,
+                    'discount_reason': line.discount_reason,
+                    'currency': line.currency,
+                    'additional_info': line.additional_info
+                }
+                for line in invoice.lines
+            ]
+        
+        return invoice_dict
     
     def get_invoice_by_document_number(self, document_number: str) -> Optional[Invoice]:
         """Get an invoice by its document number."""
@@ -103,7 +150,7 @@ class InvoiceService(BaseService[Invoice, InvoiceCreate, InvoiceUpdate]):
         status: Optional[InvoiceStatus] = None,
         skip: int = 0,
         limit: int = 100
-    ) -> List[Invoice]:
+    ) -> List[Dict[str, Any]]:
         """
         Get invoices within a date range, optionally filtered by company and status.
         
@@ -116,12 +163,14 @@ class InvoiceService(BaseService[Invoice, InvoiceCreate, InvoiceUpdate]):
             limit: Maximum number of records to return
             
         Returns:
-            List of matching invoices
+            List of dictionaries containing invoice data
         """
+        # Start with a base query
         query = self.invoice_repo.db.query(Invoice).filter(
             Invoice.invoice_date.between(start_date, end_date)
         )
         
+        # Apply filters
         if company_id:
             query = query.filter(
                 (Invoice.supplier_id == company_id) | 
@@ -130,9 +179,36 @@ class InvoiceService(BaseService[Invoice, InvoiceCreate, InvoiceUpdate]):
             
         if status:
             query = query.filter(Invoice.status == status)
+        
+        # Execute the query
+        invoices = query.order_by(Invoice.invoice_date.desc())\
+                      .offset(skip).limit(limit).all()
+        
+        # Convert SQLAlchemy models to dictionaries and handle payment_terms
+        result = []
+        for invoice in invoices:
+            invoice_dict = {}
+            for column in invoice.__table__.columns:
+                value = getattr(invoice, column.name)
+                # Handle datetime serialization
+                if isinstance(value, (datetime, date)):
+                    value = value.isoformat()
+                invoice_dict[column.name] = value
             
-        return query.order_by(Invoice.invoice_date.desc())\
-                   .offset(skip).limit(limit).all()
+            # Handle payment_terms as a list of strings
+            payment_terms = []
+            if hasattr(invoice, 'payment_terms_list') and invoice.payment_terms_list:
+                payment_terms = [
+                    term.description for term in invoice.payment_terms_list 
+                    if term and term.description
+                ]
+            elif 'payment_terms' in invoice_dict and invoice_dict['payment_terms']:
+                payment_terms = [term.strip() for term in invoice_dict['payment_terms'].split(',') if term.strip()]
+            
+            invoice_dict['payment_terms'] = payment_terms
+            result.append(invoice_dict)
+        
+        return result
     
     def get_invoice_statistics(
         self,

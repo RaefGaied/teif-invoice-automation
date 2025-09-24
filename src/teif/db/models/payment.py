@@ -39,24 +39,28 @@ class PaymentTerm(CreatedAtModel):
     # Payment terms information
     payment_terms_code: Mapped[Optional[str]] = mapped_column(
         String(10),
-        comment="Payment terms code (e.g., 'I-37' for payment terms)"
+        comment="Payment terms code (e.g., 'I-10' for payment terms)"
     )
     
-    # Payment due dates
-    due_date: Mapped[Optional[date]] = mapped_column(
+    description: Mapped[Optional[str]] = mapped_column(
+        String(500),
+        comment="Description of the payment terms (e.g., 'Paiement à 30 jours fin de mois')"
+    )
+    
+    # Payment due dates and discounts
+    payment_due_date: Mapped[Optional[date]] = mapped_column(
         Date,
         comment="The date by which the payment is due"
     )
     
-    # Discount information
     discount_percent: Mapped[Optional[Decimal]] = mapped_column(
         Numeric(5, 2),
-        comment="Discount percentage for early payment (e.g., 2.0 for 2%)"
+        comment="Discount percentage (e.g., 2.0 for 2%)"
     )
     
     discount_due_date: Mapped[Optional[date]] = mapped_column(
         Date,
-        comment="Last date to take advantage of the early payment discount"
+        comment="Last date to benefit from the discount"
     )
     
     # Payment reference information
@@ -71,7 +75,7 @@ class PaymentTerm(CreatedAtModel):
         comment="Any additional notes about the payment terms"
     )
     
-    # Relationship to Invoice
+    # Relationships
     invoice: Mapped["Invoice"] = relationship(
         "Invoice", 
         back_populates="payment_terms_list"
@@ -89,7 +93,7 @@ class PaymentTerm(CreatedAtModel):
         """Convert to TEIF-compatible dictionary."""
         return {
             "payment_terms_code": self.payment_terms_code,
-            "due_date": self.due_date.isoformat() if self.due_date else None,
+            "payment_due_date": self.payment_due_date.isoformat() if self.payment_due_date else None,
             "discount_percent": float(self.discount_percent) if self.discount_percent else None,
             "discount_due_date": self.discount_due_date.isoformat() if self.discount_due_date else None,
             "payment_reference": self.payment_reference,
@@ -97,7 +101,7 @@ class PaymentTerm(CreatedAtModel):
         }
     
     def __repr__(self) -> str:
-        return f"<PaymentTerm(id={self.id}, invoice_id={self.invoice_id}, due_date={self.due_date})>"
+        return f"<PaymentTerm(id={self.id}, code={self.payment_terms_code}, due_date={self.payment_due_date})>"
 
 
 class PaymentMean(BaseModel):

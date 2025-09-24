@@ -79,29 +79,103 @@ const InvoiceList: React.FC<InvoiceListProps> = ({
         if (clientId) params.clientId = clientId;
         if (status) params.status = status;
 
-        const response = await invoiceApi.getInvoices(params);
-        return response;
+        try {
+            const response = await invoiceApi.getInvoices(params);
+            console.log('API Response:', response);
+
+            if (!response) {
+                console.error('Aucune donnée reçue de l\'API');
+                return getEmptyResponse();
+            }
+
+            // Si la réponse est directement un tableau, l'encapsuler dans un objet PaginatedResponse
+            if (Array.isArray(response)) {
+                return {
+                    data: response,
+                    total: response.length,
+                    page,
+                    limit,
+                    totalPages: Math.ceil(response.length / limit),
+                    hasNextPage: false,
+                    hasPreviousPage: page > 1,
+                    from: (page - 1) * limit + 1,
+                    to: Math.min(page * limit, response.length)
+                };
+            }
+
+            // Sinon, supposer que la réponse a déjà la structure PaginatedResponse
+            return {
+                data: response.data || [],
+                total: response.total || 0,
+                page: response.page || page,
+                limit: response.limit || limit,
+                totalPages: response.totalPages || Math.ceil((response.total || 0) / (response.limit || limit)),
+                hasNextPage: response.hasNextPage || false,
+                hasPreviousPage: response.hasPreviousPage || false,
+                from: response.from || ((page - 1) * limit) + 1,
+                to: response.to || Math.min(page * limit, response.total || 0)
+            };
+
+        } catch (error) {
+            console.error('Erreur lors de la récupération des factures:', error);
+            return getEmptyResponse();
+        }
     }, [page, limit, searchQuery, filters, clientId, status]);
+    const getEmptyResponse = (): PaginatedResponse<Invoice> => ({
+        data: [],
+        total: 0,
+        page,
+        limit,
+        totalPages: 0,
+        hasNextPage: false,
+        hasPreviousPage: false,
+        from: 0,
+        to: 0
+    });
 
     const {
         data: response,
         isLoading,
         isError,
-    } = useQuery({
+    } = useQuery<PaginatedResponse<Invoice>>({
         queryKey: ['invoices', { page, limit, searchQuery, filters, clientId, status }],
         queryFn: fetchInvoices,
-        placeholderData: (previousData: PaginatedResponse<Invoice> | undefined) =>
-            previousData ?? {
-                data: [],
-                total: 0,
-                page: 1,
-                limit,
-                totalPages: 0,
-                hasNextPage: false,
-                hasPreviousPage: false,
-                from: 0,
-                to: 0
-            },
+        select: (data) => ({
+            ...data,
+            data: data.data.map((invoice: any) => ({
+                id: invoice.id,
+                invoiceNumber: invoice.document_number || `INV-${invoice.id}`,
+                reference: invoice.message_identifier,
+                issueDate: invoice.invoice_date,
+                dueDate: invoice.due_date || invoice.invoice_date,
+                status: (invoice.status as InvoiceStatus) || 'draft',
+                subtotal: invoice.total_without_tax || 0,
+                taxAmount: invoice.tax_amount || 0,
+                totalAmount: invoice.total_with_tax || 0,
+                notes: invoice.notes || '',
+                terms: invoice.payment_terms ? invoice.payment_terms.join(', ') : '',
+                clientId: invoice.customer_id,
+                client: {
+                    id: invoice.customer_id,
+                    name: invoice.receiver_identifier || `Client ${invoice.customer_id}`,
+                },
+                items: [],
+                createdAt: invoice.created_at,
+                updatedAt: invoice.updated_at || invoice.created_at,
+                userId: 1,
+            })),
+        }),
+        placeholderData: (previousData) => previousData ?? {
+            data: [],
+            total: 0,
+            page: 1,
+            limit,
+            totalPages: 0,
+            hasNextPage: false,
+            hasPreviousPage: false,
+            from: 0,
+            to: 0
+        },
     });
 
     const { data: invoices = [], total = 0 } = response || {};
@@ -203,7 +277,7 @@ const InvoiceList: React.FC<InvoiceListProps> = ({
                     onFilterChange={handleFilterChange}
                     onReset={handleResetFilters}
                     defaultFilters={filters}
-                    clients={[]} // Add your clients data here if needed
+                    clients={[]}
                     statuses={Object.keys(statusColors) as InvoiceStatus[]}
                 />
             )}
@@ -222,70 +296,72 @@ const InvoiceList: React.FC<InvoiceListProps> = ({
                         </Tr>
                     </Thead>
                     <Tbody>
-                        {invoices.map((invoice) => (
-                            <Tr key={invoice.id} _hover={{ bg: 'gray.50' }}>
-                                <Td>
-                                    <Link as={RouterLink} to={`/invoices/${invoice.id}`} color="blue.500" fontWeight="medium">
-                                        {invoice.invoiceNumber}
-                                    </Link>
-                                </Td>
-                                <Td>{invoice.client?.name || 'N/A'}</Td>
-                                <Td>
-                                    {invoice.issueDate || invoice.createdAt
-                                        ? format(new Date(invoice.issueDate || invoice.createdAt as string | number | Date), 'dd MMM yyyy')
-                                        : 'N/A'}
-                                </Td>
-                                <Td>
-                                    {invoice.dueDate
-                                        ? format(new Date(invoice.dueDate as string | number | Date), 'dd MMM yyyy')
-                                        : 'N/A'}
-                                </Td>
-                                <Td>{formatCurrency(invoice.totalAmount)}</Td>
-                                <Td>
-                                    <Badge colorScheme={statusColors[invoice.status]}>
-                                        {invoice.status}
-                                    </Badge>
-                                </Td>
-                                <Td>
-                                    <Flex gap={2}>
-                                        <IconButton
-                                            as={RouterLink}
-                                            to={`/invoices/${invoice.id}`}
-                                            aria-label="Voir la facture"
-                                            icon={<FiEye />}
-                                            size="sm"
-                                            variant="ghost"
-                                        />
-                                        <IconButton
-                                            as="a"
-                                            href={`/api/invoices/${invoice.id}/download`}
-                                            download
-                                            aria-label="Télécharger la facture"
-                                            icon={<FiDownload />}
-                                            size="sm"
-                                            variant="ghost"
-                                        />
-                                        <IconButton
-                                            as={RouterLink}
-                                            to={`/invoices/${invoice.id}/edit`}
-                                            aria-label="Modifier la facture"
-                                            icon={<FiEdit2 />}
-                                            size="sm"
-                                            variant="ghost"
-                                            colorScheme="blue"
-                                        />
-                                        <IconButton
-                                            onClick={() => handleDelete(invoice.id)}
-                                            aria-label="Supprimer la facture"
-                                            icon={<FiTrash2 />}
-                                            size="sm"
-                                            variant="ghost"
-                                            colorScheme="red"
-                                        />
-                                    </Flex>
-                                </Td>
-                            </Tr>
-                        ))}
+                        {invoices.map((invoice) => {
+                            const formattedDate = invoice.issueDate
+                                ? format(new Date(invoice.issueDate), 'dd MMM yyyy', { locale: fr })
+                                : 'N/A';
+
+                            const formattedDueDate = invoice.dueDate
+                                ? format(new Date(invoice.dueDate), 'dd MMM yyyy', { locale: fr })
+                                : 'N/A';
+
+                            return (
+                                <Tr key={invoice.id} _hover={{ bg: 'gray.50' }}>
+                                    <Td>
+                                        <Link as={RouterLink} to={`/invoices/${invoice.id}`} color="blue.500" fontWeight="medium">
+                                            {invoice.invoiceNumber}
+                                        </Link>
+                                    </Td>
+                                    <Td>{invoice.client?.name || 'N/A'}</Td>
+                                    <Td>{formattedDate}</Td>
+                                    <Td>{formattedDueDate}</Td>
+                                    <Td>{formatCurrency(invoice.totalAmount)}</Td>
+                                    <Td>
+                                        <Badge colorScheme={statusColors[invoice.status as InvoiceStatus] || 'gray'}>
+                                            {invoice.status}
+                                        </Badge>
+                                    </Td>
+                                    <Td>
+                                        <Flex gap={2}>
+                                            <IconButton
+                                                as={RouterLink}
+                                                to={`/invoices/${invoice.id}`}
+                                                aria-label="Voir la facture"
+                                                icon={<FiEye />}
+                                                size="sm"
+                                                variant="ghost"
+                                            />
+                                            <IconButton
+                                                as="a"
+                                                href={`/api/invoices/${invoice.id}/download`}
+                                                download
+                                                aria-label="Télécharger la facture"
+                                                icon={<FiDownload />}
+                                                size="sm"
+                                                variant="ghost"
+                                            />
+                                            <IconButton
+                                                as={RouterLink}
+                                                to={`/invoices/${invoice.id}/edit`}
+                                                aria-label="Modifier la facture"
+                                                icon={<FiEdit2 />}
+                                                size="sm"
+                                                variant="ghost"
+                                                colorScheme="blue"
+                                            />
+                                            <IconButton
+                                                onClick={() => handleDelete(invoice.id)}
+                                                aria-label="Supprimer la facture"
+                                                icon={<FiTrash2 />}
+                                                size="sm"
+                                                variant="ghost"
+                                                colorScheme="red"
+                                            />
+                                        </Flex>
+                                    </Td>
+                                </Tr>
+                            );
+                        })}
                     </Tbody>
                 </Table>
             </Box>

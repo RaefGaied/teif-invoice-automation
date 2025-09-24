@@ -21,19 +21,17 @@ import {
 } from '@chakra-ui/react';
 import { FiMenu, FiMoon, FiSun, FiBell, FiLogOut, FiUser, FiSettings } from 'react-icons/fi';
 import Sidebar from '../components/navigation/Sidebar';
-import { useAuth } from '../contexts/AuthContext';
 
 const MainLayout: React.FC = () => {
     const { colorMode, toggleColorMode } = useColorMode();
     const { isOpen, onOpen, onClose } = useDisclosure();
-    const { user, logout } = useAuth();
     const toast = useToast();
     const bgColor = useColorModeValue('white', 'gray.800');
     const borderColor = useColorModeValue('gray.200', 'gray.700');
 
     const handleLogout = async () => {
         try {
-            await logout();
+           
             toast({
                 title: 'Déconnexion réussie',
                 status: 'success',
@@ -128,15 +126,15 @@ const MainLayout: React.FC = () => {
                                         mr={2}
                                     >
                                         <Text fontSize="sm" fontWeight="medium">
-                                            {user?.name || 'Utilisateur'}
+                                            'Utilisateur'
                                         </Text>
                                         <Text fontSize="xs" color="gray.500">
-                                            {user?.role || 'Rôle'}
+                                            Rôle
                                         </Text>
                                     </VStack>
                                     <Avatar
                                         size="sm"
-                                        name={user?.name || 'User'}
+                                        name='User'
                                         bg={useColorModeValue('blue.500', 'blue.200')}
                                         color={useColorModeValue('white', 'gray.800')}
                                     />

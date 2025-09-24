@@ -51,7 +51,6 @@ async def get_dashboard_stats(db: Session = Depends(get_db)):
             status_code=500,
             detail=f"Error fetching dashboard stats: {str(e)}"
         )
-
 @router.get("/monthly-stats", response_model=List[Dict[str, Any]])
 async def get_monthly_stats(months: int = 6, db: Session = Depends(get_db)):
     """Get monthly statistics for the last N months"""
@@ -59,24 +58,35 @@ async def get_monthly_stats(months: int = 6, db: Session = Depends(get_db)):
         end_date = datetime.utcnow()
         start_date = end_date - timedelta(days=30*months)
         
+        # For SQL Server, we'll use DATEFROMPARTS and YEAR/MONTH functions
         monthly_data = db.query(
-            func.date_trunc('month', Invoice.invoice_date).label('month'),
+            func.YEAR(Invoice.invoice_date).label('year'),
+            func.MONTH(Invoice.invoice_date).label('month'),
             func.count(Invoice.id).label('invoice_count'),
             func.coalesce(func.sum(Invoice.total_with_tax), 0).label('total_amount'),
             func.coalesce(func.sum(Invoice.tax_amount), 0).label('tax_amount')
         ).filter(
             Invoice.invoice_date.between(start_date, end_date)
         ).group_by(
-            func.date_trunc('month', Invoice.invoice_date)
-        ).order_by('month').all()
+            func.YEAR(Invoice.invoice_date),
+            func.MONTH(Invoice.invoice_date)
+        ).order_by(
+            func.YEAR(Invoice.invoice_date),
+            func.MONTH(Invoice.invoice_date)
+        ).all()
         
-        return [{
-            "month": month.strftime('%Y-%m'),
-            "invoice_count": int(invoice_count),
-            "total_amount": float(total_amount),
-            "tax_amount": float(tax_amount)
-        } for month, invoice_count, total_amount, tax_amount in monthly_data]
+        # Format the results
+        result = []
+        for year, month, invoice_count, total_amount, tax_amount in monthly_data:
+            result.append({
+                "month": f"{year:04d}-{month:02d}",
+                "invoice_count": int(invoice_count),
+                "total_amount": float(total_amount),
+                "tax_amount": float(tax_amount)
+            })
         
+        return result
+            
     except Exception as e:
         raise HTTPException(
             status_code=500,
